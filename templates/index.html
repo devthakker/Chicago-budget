@@ -19,6 +19,19 @@
         <textarea id="query" name="query" rows="3" placeholder="Example: What is budgeted for the Office of the Mayor?" required>{{ query }}</textarea>
         <button type="submit">Ask</button>
       </form>
+      {% if sample_queries and sample_queries|length > 0 %}
+      <section class="card sample-queries">
+        <h2>Try A Sample Query</h2>
+        <div class="sample-grid">
+          {% for sq in sample_queries %}
+          <form method="post" class="sample-form">
+            <input type="hidden" name="query" value="{{ sq }}" />
+            <button type="submit" class="sample-btn">{{ sq }}</button>
+          </form>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
 
       {% if error %}
       <section class="card error">{{ error }}</section>

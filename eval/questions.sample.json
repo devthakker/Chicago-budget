@@ -1,0 +1,78 @@
+[
+  {
+    "id": "q1",
+    "query": "What grants mention ARPA?",
+    "targets": [
+      {
+        "source_file": "chicago_Annual_Appropriation_Ordinance_2026.pdf",
+        "page_min": 554,
+        "page_max": 566
+      },
+      {
+        "source_file": "chicago_Grant_Details_Ordinance_2026.pdf",
+        "page_min": 1,
+        "page_max": 40
+      }
+    ]
+  },
+  {
+    "id": "q2",
+    "query": "What is budgeted for the Office of the Mayor?",
+    "targets": [
+      {
+        "source_file": "chicago_Annual_Appropriation_Ordinance_2026.pdf",
+        "page_min": 1,
+        "page_max": 20
+      }
+    ]
+  },
+  {
+    "id": "q3",
+    "query": "Which funds are listed under grant funds?",
+    "targets": [
+      {
+        "source_file": "chicago_Annual_Appropriation_Ordinance_2026.pdf",
+        "page_min": 554,
+        "page_max": 560
+      }
+    ]
+  },
+  {
+    "id": "q4",
+    "query": "Where does the ordinance discuss new grants not included in this appropriation?",
+    "targets": [
+      {
+        "source_file": "chicago_Annual_Appropriation_Ordinance_2026.pdf",
+        "page_min": 555,
+        "page_max": 557
+      }
+    ]
+  },
+  {
+    "id": "q5",
+    "query": "Show examples of State Grant Fund entries.",
+    "targets": [
+      {
+        "source_file": "chicago_Annual_Appropriation_Ordinance_2026.pdf",
+        "page_min": 560,
+        "page_max": 566
+      },
+      {
+        "source_file": "chicago_Grant_Details_Ordinance_2026.pdf",
+        "page_min": 30,
+        "page_max": 220
+      }
+    ]
+  },
+  {
+    "id": "q6",
+    "query": "What does the table of contents include for the grants ordinance?",
+    "targets": [
+      {
+        "source_file": "chicago_Grant_Details_Ordinance_2026.pdf",
+        "page_min": 1,
+        "page_max": 8
+      }
+    ]
+  }
+]

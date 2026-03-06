@@ -129,6 +129,34 @@ p {
   margin-bottom: 0;
 }
 
+.sample-queries {
+  margin-top: 1rem;
+}
+
+.sample-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.sample-form {
+  margin: 0;
+}
+
+.sample-btn {
+  background: #f7fbff;
+  color: var(--accent);
+  border: 1px solid rgba(0, 119, 182, 0.35);
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.sample-btn:hover {
+  background: #eef7ff;
+}
+
 .results-layout {
   margin-top: 1rem;
   display: grid;

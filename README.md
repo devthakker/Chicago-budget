@@ -15,6 +15,7 @@ The system does:
 - Optional cross-encoder reranking path
 - Answers with page-level citations
 - Source links that open exact PDF pages (new tab or embedded viewer panel)
+- Clickable sample queries in the UI for quick testing
 
 ## 1) Setup
 
@@ -90,6 +91,25 @@ JSON output:
 ```bash
 python3 query_rag.py "What grants mention ARPA?" --json
 ```
+
+## 3b) Evaluate and tune retrieval
+
+A starter evaluation set is included at:
+- `eval/questions.sample.json`
+
+Run a single evaluation:
+
+```bash
+python3 eval_rag.py --questions-file eval/questions.sample.json --top-k 8 --show-queries
+```
+
+Run a tuning grid report (best BM25/vector blend):
+
+```bash
+python3 eval_rag.py --questions-file eval/questions.sample.json --top-k 8 --tune --bm25-grid "0.7,0.8,0.85,0.9,0.95"
+```
+
+JSON output is supported with `--json`.
 
 ## 4) Run web app
 

@@ -24,6 +24,13 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 engine = RAGEngine(ROOT / "data/index")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 PDF_FILES = {p.name: p for p in ROOT.glob("*.pdf")}
+SAMPLE_QUERIES = [
+    "What grants mention ARPA?",
+    "What is budgeted for the Office of the Mayor?",
+    "Which funds are listed under grant funds?",
+    "What does the ordinance say about new grants not included in the appropriation?",
+    "Show examples of State Grant Fund entries.",
+]
 
 _RATE_LIMIT_ENABLED = (os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"})
 _RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "20"))
@@ -107,6 +114,7 @@ async def home(request: Request) -> HTMLResponse:
             "answer": None,
             "results": [],
             "error": None,
+            "sample_queries": SAMPLE_QUERIES,
         },
     )
 
@@ -123,6 +131,7 @@ async def ask(request: Request, query: str = Form(...)) -> HTMLResponse:
                 "answer": None,
                 "results": [],
                 "error": "Enter a question to search the budget documents.",
+                "sample_queries": SAMPLE_QUERIES,
             },
         )
 
@@ -144,6 +153,7 @@ async def ask(request: Request, query: str = Form(...)) -> HTMLResponse:
             "answer": answer,
             "results": results,
             "error": error,
+            "sample_queries": SAMPLE_QUERIES,
         },
     )
 
