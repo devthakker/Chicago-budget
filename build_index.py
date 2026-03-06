@@ -15,8 +15,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build RAG index for Chicago budget PDFs")
     parser.add_argument("--pdf-dir", type=Path, default=Path("."), help="Directory containing PDF files")
     parser.add_argument("--index-dir", type=Path, default=Path("data/index"), help="Directory to write index.json")
-    parser.add_argument("--max-tokens", type=int, default=800, help="Max tokens per chunk")
-    parser.add_argument("--overlap-tokens", type=int, default=120, help="Token overlap between chunks")
+    parser.add_argument("--max-tokens", type=int, default=450, help="Max tokens per chunk")
+    parser.add_argument("--overlap-tokens", type=int, default=70, help="Token overlap between chunks")
     return parser.parse_args()
 
 

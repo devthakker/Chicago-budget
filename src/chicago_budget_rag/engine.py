@@ -24,6 +24,8 @@ class Chunk:
     page_start: int
     page_end: int
     section: str | None
+    token_count: int
+    toc_like: bool
 
 
 @dataclass
@@ -35,6 +37,7 @@ class SearchResult:
     page_start: int
     page_end: int
     section: str | None
+    toc_like: bool
 
 
 class RAGEngine:
@@ -46,8 +49,8 @@ class RAGEngine:
     def build(
         self,
         pdf_paths: list[Path],
-        max_tokens: int = 800,
-        overlap_tokens: int = 120,
+        max_tokens: int = 450,
+        overlap_tokens: int = 70,
         embedding_model: str | None = None,
         embedding_batch_size: int = 32,
     ) -> dict[str, Any]:
@@ -68,6 +71,8 @@ class RAGEngine:
                 "page_start": c.page_start,
                 "page_end": c.page_end,
                 "section": c.section,
+                "token_count": c.token_count,
+                "toc_like": c.toc_like,
                 "term_freq": Counter(tokenized[i]),
                 "doc_len": len(tokenized[i]),
             }
@@ -94,11 +99,13 @@ class RAGEngine:
                 resolved_embedding_model = None
 
         index = {
-            "version": 1,
+            "version": 2,
             "created_from": [str(p.name) for p in pdf_paths],
             "stats": {
                 "chunk_count": len(chunks),
                 "avg_doc_len": avg_doc_len,
+                "chunk_max_tokens": max_tokens,
+                "chunk_overlap_tokens": overlap_tokens,
                 "embedding_provider": embedding_provider if embeddings else "none",
                 "embedding_model": resolved_embedding_model if embeddings else None,
             },
@@ -117,6 +124,8 @@ class RAGEngine:
                     "page_start": c["page_start"],
                     "page_end": c["page_end"],
                     "section": c["section"],
+                    "token_count": c["token_count"],
+                    "toc_like": c["toc_like"],
                     "doc_len": c["doc_len"],
                     "term_freq": dict(c["term_freq"]),
                 }
@@ -140,13 +149,16 @@ class RAGEngine:
         self,
         query: str,
         top_k: int = 8,
-        bm25_weight: float = 0.7,
-        vector_weight: float = 0.3,
+        bm25_weight: float | None = None,
+        vector_weight: float | None = None,
     ) -> list[SearchResult]:
         index = self.load()
         chunks = index["chunks"]
         q_tokens = tokenize(query)
         bm25_scores = self._bm25_scores(q_tokens)
+
+        bm25_weight, vector_weight = resolve_retrieval_weights(bm25_weight, vector_weight)
+        toc_penalty = _env_float("RAG_TOC_PENALTY", 0.35)
 
         dense_scores: dict[str, float] = {}
         query_vector: list[float] | None = None
@@ -179,16 +191,27 @@ class RAGEngine:
                 score = bm25_weight * bm25_norm + vector_weight * dense_norm
             else:
                 score = bm25_norm
+
             score += 0.08 * _token_overlap_bonus(query, chunk["text"])
+            if chunk.get("toc_like", False):
+                score -= toc_penalty
             blended.append((cid, score))
 
-        top_ids = sorted(blended, key=lambda x: x[1], reverse=True)[: max(top_k * 3, top_k)]
+        candidate_multiplier = max(2, _env_int("RAG_CANDIDATE_MULTIPLIER", 8))
+        candidate_count = max(top_k * candidate_multiplier, top_k)
+        ranked = sorted(blended, key=lambda x: x[1], reverse=True)[:candidate_count]
+
         chunk_map = {c["chunk_id"]: c for c in chunks}
-        reranked = sorted(
-            top_ids,
-            key=lambda x: _rerank_heuristic(query, chunk_map[x[0]]["text"], x[1]),
-            reverse=True,
-        )[:top_k]
+        reranked = rerank_candidates(query, ranked, chunk_map, top_k=top_k)
+
+        if _env_bool("RAG_SUPPRESS_TOC", True):
+            non_toc = [item for item in reranked if not chunk_map[item[0]].get("toc_like", False)]
+            if len(non_toc) >= top_k:
+                reranked = non_toc[:top_k]
+            else:
+                existing = {cid for cid, _ in non_toc}
+                fill = [item for item in reranked if item[0] not in existing]
+                reranked = (non_toc + fill)[:top_k]
 
         return [
             SearchResult(
@@ -199,12 +222,19 @@ class RAGEngine:
                 page_start=chunk_map[cid]["page_start"],
                 page_end=chunk_map[cid]["page_end"],
                 section=chunk_map[cid].get("section"),
+                toc_like=bool(chunk_map[cid].get("toc_like", False)),
             )
             for cid, score in reranked
         ]
 
-    def answer(self, query: str, top_k: int = 6) -> dict[str, Any]:
-        results = self.search(query, top_k=top_k)
+    def answer(
+        self,
+        query: str,
+        top_k: int = 6,
+        bm25_weight: float | None = None,
+        vector_weight: float | None = None,
+    ) -> dict[str, Any]:
+        results = self.search(query, top_k=top_k, bm25_weight=bm25_weight, vector_weight=vector_weight)
         context = []
         for i, r in enumerate(results, start=1):
             cite = f"[{r.source_file} p.{r.page_start}-{r.page_end}]"
@@ -256,6 +286,7 @@ class RAGEngine:
         for pdf_path in pdf_paths:
             pages = extract_pdf_pages(pdf_path)
             section = None
+            page_toc_flags = {i + 1: is_toc_page(p) for i, p in enumerate(pages)}
             current_words: list[str] = []
             chunk_start_page = 1
             chunk_end_page = 1
@@ -267,6 +298,12 @@ class RAGEngine:
                 text = " ".join(current_words).strip()
                 if not text:
                     return
+
+                token_count = len(current_words)
+                toc_votes = sum(1 for p in range(chunk_start_page, chunk_end_page + 1) if page_toc_flags.get(p, False))
+                page_span = max(1, chunk_end_page - chunk_start_page + 1)
+                toc_like = bool(toc_votes / page_span >= 0.5 or is_toc_section(section, text))
+
                 chunk_id = f"{pdf_path.stem}-{chunk_start_page:04d}-{chunk_end_page:04d}-{len(chunks):05d}"
                 chunks.append(
                     Chunk(
@@ -276,8 +313,11 @@ class RAGEngine:
                         page_start=chunk_start_page,
                         page_end=chunk_end_page,
                         section=section,
+                        token_count=token_count,
+                        toc_like=toc_like,
                     )
                 )
+
                 overlap = current_words[-overlap_tokens:] if overlap_tokens > 0 else []
                 current_words = overlap[:]
                 chunk_start_page = chunk_end_page
@@ -287,21 +327,30 @@ class RAGEngine:
                 paragraphs = [p.strip() for p in re.split(r"\n\s*\n", normalized) if p.strip()]
                 for para in paragraphs:
                     heading = detect_heading(para)
+                    if heading and heading != section and len(current_words) >= max(120, max_tokens // 3):
+                        chunk_end_page = page_num
+                        flush_chunk()
                     if heading:
                         section = heading
+
                     para_words = para.split()
                     if not para_words:
                         continue
 
                     if not current_words:
                         chunk_start_page = page_num
+
                     if len(current_words) + len(para_words) > max_tokens and current_words:
                         chunk_end_page = page_num
                         flush_chunk()
                         if not current_words:
                             chunk_start_page = page_num
+
                     current_words.extend(para_words)
                     chunk_end_page = page_num
+
+                if len(current_words) >= int(max_tokens * 0.9):
+                    flush_chunk()
 
             flush_chunk()
 
@@ -340,6 +389,109 @@ def detect_heading(paragraph: str) -> str | None:
     if HEADING_RE.match(first_line):
         return first_line
     return None
+
+
+def is_toc_page(text: str) -> bool:
+    lowered = text.lower()
+    return "table of contents" in lowered
+
+
+def is_toc_section(section: str | None, text: str) -> bool:
+    if section and "table of contents" in section.lower():
+        return True
+    first_window = text[:1000].lower()
+    return "table of contents" in first_window
+
+
+def resolve_retrieval_weights(bm25_weight: float | None, vector_weight: float | None) -> tuple[float, float]:
+    if bm25_weight is None:
+        bm25_weight = _env_float("RAG_BM25_WEIGHT", 0.85)
+    if vector_weight is None:
+        vector_weight = _env_float("RAG_VECTOR_WEIGHT", 0.15)
+
+    total = max(1e-9, bm25_weight + vector_weight)
+    bm25_weight = bm25_weight / total
+    vector_weight = vector_weight / total
+    return bm25_weight, vector_weight
+
+
+def rerank_candidates(
+    query: str,
+    ranked_candidates: list[tuple[str, float]],
+    chunk_map: dict[str, dict[str, Any]],
+    top_k: int,
+) -> list[tuple[str, float]]:
+    strategy = (os.getenv("RAG_RERANKER", "auto") or "auto").strip().lower()
+    rerank_n = max(top_k, _env_int("RAG_RERANK_CANDIDATES", 30))
+    candidates = ranked_candidates[:rerank_n]
+
+    if strategy == "none":
+        return candidates[:top_k]
+
+    if strategy in {"auto", "cross-encoder"}:
+        model = os.getenv("RAG_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+        ce = _load_cross_encoder(model)
+        if ce is not None:
+            reranked = _rerank_with_cross_encoder(ce, query, candidates, chunk_map)
+            return reranked[:top_k]
+        if strategy == "cross-encoder":
+            print("[rerank] cross-encoder requested but unavailable; falling back to heuristic")
+
+    reranked = sorted(
+        candidates,
+        key=lambda x: _rerank_heuristic(query, chunk_map[x[0]]["text"], x[1]),
+        reverse=True,
+    )
+    return reranked[:top_k]
+
+
+def _load_cross_encoder(model_name: str):
+    try:
+        from sentence_transformers import CrossEncoder
+    except Exception:
+        return None
+
+    cache = getattr(_load_cross_encoder, "_cache", {})
+    if model_name in cache:
+        return cache[model_name]
+
+    try:
+        model = CrossEncoder(model_name)
+    except Exception as exc:
+        print(f"[rerank] could not load cross-encoder model '{model_name}': {exc}")
+        return None
+
+    cache[model_name] = model
+    setattr(_load_cross_encoder, "_cache", cache)
+    return model
+
+
+def _rerank_with_cross_encoder(ce, query: str, candidates: list[tuple[str, float]], chunk_map: dict[str, dict[str, Any]]) -> list[tuple[str, float]]:
+    pairs = [(query, chunk_map[cid]["text"][:2200]) for cid, _ in candidates]
+    try:
+        ce_scores = ce.predict(pairs)
+    except Exception as exc:
+        print(f"[rerank] cross-encoder scoring failed: {exc}")
+        return sorted(
+            candidates,
+            key=lambda x: _rerank_heuristic(query, chunk_map[x[0]]["text"], x[1]),
+            reverse=True,
+        )
+
+    ce_list = [float(x) for x in ce_scores]
+    ce_min = min(ce_list) if ce_list else 0.0
+    ce_max = max(ce_list) if ce_list else 1.0
+    denom = (ce_max - ce_min) or 1.0
+
+    fused: list[tuple[str, float]] = []
+    for (cid, base_score), ce_score in zip(candidates, ce_list):
+        ce_norm = (ce_score - ce_min) / denom
+        final = 0.75 * ce_norm + 0.25 * base_score
+        if chunk_map[cid].get("toc_like", False):
+            final -= _env_float("RAG_TOC_PENALTY", 0.35)
+        fused.append((cid, final))
+
+    return sorted(fused, key=lambda x: x[1], reverse=True)
 
 
 def _norm(vec: list[float]) -> float:
@@ -632,3 +784,30 @@ def _generate_answer_bedrock(prompt: str) -> str:
     content = response.get("output", {}).get("message", {}).get("content", [])
     texts = [c.get("text", "") for c in content if isinstance(c, dict)]
     return "\n".join(t for t in texts if t).strip()
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
