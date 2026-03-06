@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chicago Budget RAG</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">City of Chicago FY2026</p>
+        <h1>Budget Document Q&A</h1>
+        <p class="sub">Ask a question and get answers grounded in ordinance pages.</p>
+      </header>
+
+      <form method="post" class="ask-form">
+        <label for="query">Question</label>
+        <textarea id="query" name="query" rows="3" placeholder="Example: What is budgeted for the Office of the Mayor?" required>{{ query }}</textarea>
+        <button type="submit">Ask</button>
+      </form>
+
+      {% if error %}
+      <section class="card error">{{ error }}</section>
+      {% endif %}
+
+      {% if answer %}
+      <section class="card">
+        <h2>Answer</h2>
+        <pre>{{ answer }}</pre>
+      </section>
+      {% endif %}
+
+      {% if results and results|length > 0 %}
+      <section class="card">
+        <h2>Sources</h2>
+        <ul class="sources">
+          {% for r in results %}
+          <li>
+            <div class="meta">{{ r.source_file }} · p.{{ r.page_start }}-{{ r.page_end }} · score {{ '%.3f'|format(r.score) }}</div>
+            {% if r.section %}<div class="section">{{ r.section }}</div>{% endif %}
+            <p>{{ r.text[:700] }}{% if r.text|length > 700 %}...{% endif %}</p>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+    </main>
+  </body>
+</html>

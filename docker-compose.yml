@@ -1,0 +1,16 @@
+services:
+  web:
+    build: .
+    container_name: chicago-budget-rag
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
+      - FORCE_REINDEX=${FORCE_REINDEX:-0}
+    volumes:
+      - rag_index:/app/data/index
+
+volumes:
+  rag_index:

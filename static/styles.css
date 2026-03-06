@@ -1,0 +1,130 @@
+:root {
+  --bg: #f5f3ef;
+  --ink: #121619;
+  --muted: #4b5563;
+  --surface: #fffdf7;
+  --line: #d8d2c8;
+  --accent: #0077b6;
+  --accent-2: #d62828;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(circle at 10% 10%, #fffaf0, var(--bg) 40%);
+}
+
+.shell {
+  max-width: 900px;
+  margin: 3rem auto;
+  padding: 0 1rem 3rem;
+}
+
+header h1 {
+  margin: 0.15rem 0 0.5rem;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+}
+
+.eyebrow {
+  margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.sub {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+}
+
+.ask-form {
+  display: grid;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+label {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.8rem;
+  font: inherit;
+}
+
+button {
+  justify-self: start;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.card {
+  margin-top: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.card h2 {
+  margin-top: 0;
+}
+
+.error {
+  border-left: 6px solid var(--accent-2);
+}
+
+pre {
+  white-space: pre-wrap;
+  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  margin: 0;
+}
+
+.sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.sources li {
+  border-top: 1px dashed var(--line);
+  padding-top: 0.9rem;
+}
+
+.meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.section {
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+p {
+  margin-bottom: 0;
+}
