@@ -31,9 +31,10 @@ def main() -> None:
     print(f"Index written to {engine.index_file}")
     print(f"Chunks: {index['stats']['chunk_count']}")
     if index["stats"]["embedding_model"]:
-        print(f"Embeddings model: {index['stats']['embedding_model']}")
+        print(f"Embedding provider: {index['stats'].get('embedding_provider', 'unknown')}")
+        print(f"Embedding model: {index['stats']['embedding_model']}")
     else:
-        print("Embeddings: disabled (set OPENAI_API_KEY to enable)")
+        print("Embeddings: disabled (set EMBEDDING_PROVIDER and provider credentials/config)")
 
 
 if __name__ == "__main__":

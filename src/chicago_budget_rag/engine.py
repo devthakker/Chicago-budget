@@ -48,7 +48,7 @@ class RAGEngine:
         pdf_paths: list[Path],
         max_tokens: int = 800,
         overlap_tokens: int = 120,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str | None = None,
         embedding_batch_size: int = 32,
     ) -> dict[str, Any]:
         chunks = self._build_chunks_from_pdfs(pdf_paths, max_tokens, overlap_tokens)
@@ -74,11 +74,24 @@ class RAGEngine:
             for i, c in enumerate(chunks)
         ]
 
+        embedding_provider = resolve_embedding_provider()
+        resolved_embedding_model = embedding_model or default_embedding_model(embedding_provider)
+
         embeddings: dict[str, list[float]] = {}
-        if os.getenv("OPENAI_API_KEY"):
-            texts = [c.text for c in chunks]
-            vectors = _embed_texts_openai(texts, model=embedding_model, batch_size=embedding_batch_size)
-            embeddings = {c.chunk_id: v for c, v in zip(chunks, vectors)}
+        if embedding_provider != "none":
+            try:
+                texts = [c.text for c in chunks]
+                vectors = embed_texts(
+                    texts,
+                    provider=embedding_provider,
+                    model=resolved_embedding_model,
+                    batch_size=embedding_batch_size,
+                )
+                embeddings = {c.chunk_id: v for c, v in zip(chunks, vectors)}
+            except Exception as exc:  # pragma: no cover - defensive runtime fallback
+                print(f"[build] embeddings disabled due to provider error: {exc}")
+                embedding_provider = "none"
+                resolved_embedding_model = None
 
         index = {
             "version": 1,
@@ -86,7 +99,8 @@ class RAGEngine:
             "stats": {
                 "chunk_count": len(chunks),
                 "avg_doc_len": avg_doc_len,
-                "embedding_model": embedding_model if embeddings else None,
+                "embedding_provider": embedding_provider if embeddings else "none",
+                "embedding_model": resolved_embedding_model if embeddings else None,
             },
             "bm25": {
                 "doc_freqs": dict(doc_freqs),
@@ -137,8 +151,16 @@ class RAGEngine:
         dense_scores: dict[str, float] = {}
         query_vector: list[float] | None = None
         embeddings: dict[str, list[float]] = index.get("embeddings", {})
-        if embeddings and os.getenv("OPENAI_API_KEY"):
-            query_vector = _embed_texts_openai([query], model=index["stats"].get("embedding_model") or "text-embedding-3-small")[0]
+
+        embedding_provider = index.get("stats", {}).get("embedding_provider") or "none"
+        embedding_model = index.get("stats", {}).get("embedding_model")
+
+        if embeddings and embedding_provider != "none":
+            try:
+                query_vector = embed_texts([query], provider=embedding_provider, model=embedding_model, batch_size=1)[0]
+            except Exception as exc:  # pragma: no cover - defensive runtime fallback
+                print(f"[search] vector query embedding failed; using BM25 only: {exc}")
+                query_vector = None
 
         if query_vector is not None:
             query_norm = _norm(query_vector)
@@ -189,8 +211,9 @@ class RAGEngine:
             context.append(f"Context {i} {cite}\n{r.text}")
 
         answer_text = None
-        if os.getenv("OPENAI_API_KEY"):
-            answer_text = _generate_answer_with_openai(query, "\n\n".join(context))
+        llm_provider = resolve_llm_provider()
+        if llm_provider != "none":
+            answer_text = generate_answer(query, "\n\n".join(context), provider=llm_provider)
 
         if not answer_text:
             answer_text = _extractive_answer(query, results)
@@ -358,6 +381,83 @@ def _extractive_answer(query: str, results: list[SearchResult]) -> str:
     return "\n".join(lines)
 
 
+def resolve_embedding_provider() -> str:
+    explicit = (os.getenv("EMBEDDING_PROVIDER") or "").strip().lower()
+    if explicit in {"openai", "bedrock", "ollama", "none"}:
+        return explicit
+
+    if os.getenv("OPENAI_API_KEY"):
+        return "openai"
+    if os.getenv("OLLAMA_EMBED_MODEL"):
+        return "ollama"
+    if os.getenv("BEDROCK_EMBED_MODEL") and (os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")):
+        return "bedrock"
+    return "none"
+
+
+def resolve_llm_provider() -> str:
+    explicit = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+    if explicit in {"openai", "bedrock", "ollama", "none"}:
+        return explicit
+
+    if os.getenv("OPENAI_API_KEY"):
+        return "openai"
+    if os.getenv("OLLAMA_CHAT_MODEL") or os.getenv("OLLAMA_MODEL"):
+        return "ollama"
+    if os.getenv("BEDROCK_CHAT_MODEL") and (os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")):
+        return "bedrock"
+    return "none"
+
+
+def default_embedding_model(provider: str) -> str | None:
+    if provider == "openai":
+        return os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+    if provider == "ollama":
+        return os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+    if provider == "bedrock":
+        return os.getenv("BEDROCK_EMBED_MODEL", "amazon.titan-embed-text-v2:0")
+    return None
+
+
+def generate_answer(query: str, context: str, provider: str) -> str:
+    prompt = (
+        "Answer only from the provided context. If unavailable, say so. "
+        "Cite sources inline in this format: [file p.start-end].\n\n"
+        f"Question: {query}\n\n"
+        f"Context:\n{context}"
+    )
+
+    try:
+        if provider == "openai":
+            return _generate_answer_openai(prompt)
+        if provider == "ollama":
+            return _generate_answer_ollama(prompt)
+        if provider == "bedrock":
+            return _generate_answer_bedrock(prompt)
+    except Exception as exc:  # pragma: no cover - defensive runtime fallback
+        print(f"[answer] provider={provider} failed: {exc}")
+    return ""
+
+
+def embed_texts(texts: list[str], provider: str, model: str | None, batch_size: int = 32) -> list[list[float]]:
+    if not texts:
+        return []
+
+    if provider == "openai":
+        if not model:
+            model = default_embedding_model("openai")
+        return _embed_texts_openai(texts, model=model, batch_size=batch_size)
+    if provider == "ollama":
+        if not model:
+            model = default_embedding_model("ollama")
+        return _embed_texts_ollama(texts, model=model)
+    if provider == "bedrock":
+        if not model:
+            model = default_embedding_model("bedrock")
+        return _embed_texts_bedrock(texts, model=model)
+    raise RuntimeError(f"Unknown embedding provider: {provider}")
+
+
 def _embed_texts_openai(texts: list[str], model: str, batch_size: int = 32) -> list[list[float]]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -376,12 +476,9 @@ def _embed_texts_openai(texts: list[str], model: str, batch_size: int = 32) -> l
             },
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"OpenAI embeddings request failed: {exc.code} {detail}") from exc
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+
         data = body.get("data", [])
         data = sorted(data, key=lambda item: item["index"])
         all_vectors.extend([row["embedding"] for row in data])
@@ -389,23 +486,67 @@ def _embed_texts_openai(texts: list[str], model: str, batch_size: int = 32) -> l
     return all_vectors
 
 
-def _generate_answer_with_openai(query: str, context: str) -> str:
+def _embed_texts_ollama(texts: list[str], model: str) -> list[list[float]]:
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    payload = json.dumps({"model": model, "input": texts}).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base_url}/api/embed",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Ollama embeddings request failed: {exc.code} {detail}") from exc
+
+    vectors = body.get("embeddings")
+    if not isinstance(vectors, list) or not vectors:
+        raise RuntimeError("Ollama did not return embeddings")
+    return vectors
+
+
+def _embed_texts_bedrock(texts: list[str], model: str) -> list[list[float]]:
+    try:
+        import boto3
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("boto3 is required for Bedrock support") from exc
+
+    region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+    if not region:
+        raise RuntimeError("AWS_REGION or AWS_DEFAULT_REGION must be set for Bedrock")
+
+    client = boto3.client("bedrock-runtime", region_name=region)
+    vectors: list[list[float]] = []
+    for text in texts:
+        body = json.dumps({"inputText": text})
+        response = client.invoke_model(
+            modelId=model,
+            body=body,
+            contentType="application/json",
+            accept="application/json",
+        )
+        payload = json.loads(response["body"].read())
+        emb = payload.get("embedding")
+        if not emb:
+            raise RuntimeError("Bedrock embedding response missing `embedding`")
+        vectors.append(emb)
+
+    return vectors
+
+
+def _generate_answer_openai(prompt: str) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return ""
-
-    prompt = (
-        "Answer only from the provided context. If unavailable, say so. "
-        "Cite sources inline in this format: [file p.start-end].\n\n"
-        f"Question: {query}\n\n"
-        f"Context:\n{context}"
-    )
 
     payload = json.dumps(
         {
             "model": os.getenv("OPENAI_CHAT_MODEL", "gpt-4.1-mini"),
             "input": prompt,
-            "max_output_tokens": 600,
+            "max_output_tokens": 700,
         }
     ).encode("utf-8")
     req = urllib.request.Request(
@@ -417,11 +558,8 @@ def _generate_answer_with_openai(query: str, context: str) -> str:
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError:
-        return ""
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        body = json.loads(resp.read().decode("utf-8"))
 
     if "output_text" in body and body["output_text"]:
         return body["output_text"]
@@ -432,4 +570,65 @@ def _generate_answer_with_openai(query: str, context: str) -> str:
         for content in item.get("content", []):
             if content.get("type") == "output_text":
                 texts.append(content.get("text", ""))
+    return "\n".join(t for t in texts if t).strip()
+
+
+def _generate_answer_ollama(prompt: str) -> str:
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    model = os.getenv("OLLAMA_CHAT_MODEL", os.getenv("OLLAMA_MODEL", "llama3.1"))
+
+    payload = json.dumps(
+        {
+            "model": model,
+            "stream": False,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a careful budget analyst. Answer only from provided context and include citations.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            "options": {"temperature": 0.1},
+        }
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"{base_url}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Ollama chat request failed: {exc.code} {detail}") from exc
+
+    return body.get("message", {}).get("content", "").strip()
+
+
+def _generate_answer_bedrock(prompt: str) -> str:
+    try:
+        import boto3
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("boto3 is required for Bedrock support") from exc
+
+    region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+    if not region:
+        raise RuntimeError("AWS_REGION or AWS_DEFAULT_REGION must be set for Bedrock")
+
+    model = os.getenv("BEDROCK_CHAT_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0")
+    client = boto3.client("bedrock-runtime", region_name=region)
+
+    response = client.converse(
+        modelId=model,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"temperature": 0.1, "maxTokens": 700},
+    )
+    content = response.get("output", {}).get("message", {}).get("content", [])
+    texts = [c.get("text", "") for c in content if isinstance(c, dict)]
     return "\n".join(t for t in texts if t).strip()

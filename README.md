@@ -23,8 +23,32 @@ Optional for semantic retrieval + LLM answer synthesis:
 
 ```bash
 export OPENAI_API_KEY=your_key
-# optional override
+export LLM_PROVIDER=openai
+export EMBEDDING_PROVIDER=openai
+# optional model overrides
 export OPENAI_CHAT_MODEL=gpt-4.1-mini
+export OPENAI_EMBED_MODEL=text-embedding-3-small
+```
+
+Alternative providers:
+
+Ollama (local):
+```bash
+export LLM_PROVIDER=ollama
+export EMBEDDING_PROVIDER=ollama
+export OLLAMA_BASE_URL=http://localhost:11434
+export OLLAMA_CHAT_MODEL=llama3.1
+export OLLAMA_EMBED_MODEL=nomic-embed-text
+```
+
+AWS Bedrock:
+```bash
+export LLM_PROVIDER=bedrock
+export EMBEDDING_PROVIDER=bedrock
+export AWS_REGION=us-east-1
+export BEDROCK_CHAT_MODEL=anthropic.claude-3-5-sonnet-20241022-v2:0
+export BEDROCK_EMBED_MODEL=amazon.titan-embed-text-v2:0
+# and standard AWS credentials env vars or IAM role
 ```
 
 ## 2) Build index
@@ -71,9 +95,29 @@ FORCE_REINDEX=1 docker compose up --build
 ```
 
 - To enable OpenAI embeddings and answer synthesis:
+ - To enable OpenAI embeddings and answer synthesis:
 
 ```bash
-OPENAI_API_KEY=your_key docker compose up --build
+LLM_PROVIDER=openai EMBEDDING_PROVIDER=openai OPENAI_API_KEY=your_key docker compose up --build
+```
+
+- To use local Ollama from Docker (default points to `host.docker.internal:11434`):
+
+```bash
+LLM_PROVIDER=ollama EMBEDDING_PROVIDER=ollama OLLAMA_CHAT_MODEL=llama3.2:latest OLLAMA_EMBED_MODEL=qwen3-embedding:4b docker compose up --build
+```
+
+- To use AWS Bedrock:
+
+```bash
+LLM_PROVIDER=bedrock EMBEDDING_PROVIDER=bedrock AWS_REGION=us-east-1 docker compose up --build
+```
+
+Important:
+- If you change `EMBEDDING_PROVIDER` or embedding model, rebuild the index so vectors match the provider/model:
+
+```bash
+FORCE_REINDEX=1 docker compose up --build
 ```
 
 ## Index format
