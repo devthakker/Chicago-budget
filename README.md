@@ -1,5 +1,8 @@
 # Chicago Budget RAG
 
+Full AWS + Vercel DNS deployment guide:
+- [DEPLOY_AWS_VERCEL_DNS.md](/Users/devin/Documents/GitHub/Chicago budget/DEPLOY_AWS_VERCEL_DNS.md)
+
 RAG pipeline over:
 - `chicago_Annual_Appropriation_Ordinance_2026.pdf`
 - `chicago_Grant_Details_Ordinance_2026.pdf`
@@ -11,6 +14,7 @@ The system does:
 - Hybrid retrieval (BM25 + optional embeddings)
 - Optional cross-encoder reranking path
 - Answers with page-level citations
+- Source links that open exact PDF pages (new tab or embedded viewer panel)
 
 ## 1) Setup
 
@@ -189,3 +193,31 @@ RATE_LIMIT_ENABLED=false docker compose up --build
 
 Notes:
 - This limiter is process-local memory. If you scale to multiple app instances, use a shared limiter (Redis-based) so limits are enforced consistently.
+
+## Ubuntu fix: `docker-compose-plugin` not found
+
+If `sudo apt install docker-compose-plugin` fails with `Unable to locate package`, install Docker from Docker's official apt repo:
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo $VERSION_CODENAME) stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin git
+```
+
+Verify:
+
+```bash
+docker --version
+docker compose version
+```

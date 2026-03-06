@@ -32,19 +32,64 @@
       {% endif %}
 
       {% if results and results|length > 0 %}
-      <section class="card">
-        <h2>Sources</h2>
-        <ul class="sources">
-          {% for r in results %}
-          <li>
-            <div class="meta">{{ r.source_file }} · p.{{ r.page_start }}-{{ r.page_end }} · score {{ '%.3f'|format(r.score) }}</div>
-            {% if r.section %}<div class="section">{{ r.section }}</div>{% endif %}
-            <p>{{ r.text[:700] }}{% if r.text|length > 700 %}...{% endif %}</p>
-          </li>
-          {% endfor %}
-        </ul>
+      {% set first = results[0] %}
+      <section class="results-layout">
+        <section class="card">
+          <h2>Sources</h2>
+          <ul class="sources">
+            {% for r in results %}
+            {% set doc_url = '/pdf/' ~ r.source_file ~ '#page=' ~ r.page_start %}
+            <li>
+              <div class="meta">{{ r.source_file }} · p.{{ r.page_start }}-{{ r.page_end }} · score {{ '%.3f'|format(r.score) }}</div>
+              {% if r.section %}<div class="section">{{ r.section }}</div>{% endif %}
+              <div class="source-actions">
+                <button
+                  type="button"
+                  class="inline-open"
+                  data-doc-url="{{ doc_url }}"
+                >
+                  Open In Viewer
+                </button>
+                <a href="{{ doc_url }}" target="_blank" rel="noopener noreferrer">Open In New Tab</a>
+              </div>
+              <p>{{ r.text[:700] }}{% if r.text|length > 700 %}...{% endif %}</p>
+            </li>
+            {% endfor %}
+          </ul>
+        </section>
+
+        <section class="card viewer-card">
+          <div class="viewer-head">
+            <h2>Document Viewer</h2>
+            <a id="viewerPopout" href="{{ '/pdf/' ~ first.source_file ~ '#page=' ~ first.page_start }}" target="_blank" rel="noopener noreferrer">Pop Out</a>
+          </div>
+          <iframe
+            id="pdfViewerFrame"
+            title="PDF Viewer"
+            src="{{ '/pdf/' ~ first.source_file ~ '#page=' ~ first.page_start }}"
+            loading="lazy"
+          ></iframe>
+        </section>
       </section>
       {% endif %}
     </main>
+    <script>
+      (() => {
+        const frame = document.getElementById("pdfViewerFrame");
+        if (!frame) return;
+        const popout = document.getElementById("viewerPopout");
+        const buttons = document.querySelectorAll(".inline-open");
+        buttons.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const url = btn.getAttribute("data-doc-url");
+            if (!url) return;
+            frame.src = url;
+            if (popout) {
+              popout.href = url;
+            }
+          });
+        });
+      })();
+    </script>
   </body>
 </html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rate Limit Reached</title>
+    <style>
+      :root {
+        --bg: #f5f3ef;
+        --ink: #121619;
+        --muted: #4b5563;
+        --surface: #fffdf7;
+        --line: #d8d2c8;
+        --accent: #0077b6;
+        --warn: #b42318;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: radial-gradient(circle at 10% 10%, #fffaf0, var(--bg) 40%);
+        font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+        color: var(--ink);
+      }
+
+      .card {
+        width: min(620px, 100%);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1.2rem;
+        box-shadow: 0 10px 32px rgba(18, 22, 25, 0.08);
+      }
+
+      .eyebrow {
+        margin: 0;
+        color: var(--warn);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+        font-size: 0.78rem;
+      }
+
+      h1 {
+        margin: 0.3rem 0 0.6rem;
+        font-size: clamp(1.5rem, 3vw, 2rem);
+      }
+
+      p {
+        margin: 0.5rem 0;
+        color: var(--muted);
+      }
+
+      .stats {
+        margin-top: 1rem;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.65rem;
+      }
+
+      .stat {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.65rem;
+        background: #fff;
+      }
+
+      .stat-label {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .stat-value {
+        display: block;
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin-top: 0.15rem;
+      }
+
+      .actions {
+        margin-top: 1rem;
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }
+
+      a {
+        text-decoration: none;
+        font-weight: 600;
+        border-radius: 8px;
+        padding: 0.55rem 0.85rem;
+      }
+
+      .primary {
+        color: #fff;
+        background: var(--accent);
+      }
+
+      .secondary {
+        color: var(--accent);
+        border: 1px solid var(--accent);
+        background: transparent;
+      }
+
+      @media (max-width: 700px) {
+        .stats { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card" role="main" aria-live="polite">
+      <p class="eyebrow">Too Many Requests</p>
+      <h1>Slow down for a moment</h1>
+      <p>
+        You hit the request limit for this endpoint. Please wait
+        <strong>{{ retry_after }} second{% if retry_after != 1 %}s{% endif %}</strong>
+        before trying again.
+      </p>
+
+      <section class="stats" aria-label="Rate limit details">
+        <div class="stat">
+          <span class="stat-label">Retry After</span>
+          <span class="stat-value">{{ retry_after }}s</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Request Limit</span>
+          <span class="stat-value">{{ limit }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Window</span>
+          <span class="stat-value">{{ window_seconds }}s</span>
+        </div>
+      </section>
+
+      <div class="actions">
+        <a class="primary" href="/">Try Again</a>
+        <a class="secondary" href="javascript:history.back()">Go Back</a>
+      </div>
+    </main>
+  </body>
+</html>

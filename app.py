@@ -9,8 +9,8 @@ from collections import defaultdict, deque
 from pathlib import Path
 import sys
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Form, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -23,6 +23,7 @@ app = FastAPI(title="Chicago Budget RAG")
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 engine = RAGEngine(ROOT / "data/index")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
+PDF_FILES = {p.name: p for p in ROOT.glob("*.pdf")}
 
 _RATE_LIMIT_ENABLED = (os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"})
 _RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "20"))
@@ -84,10 +85,12 @@ async def rate_limit_middleware(request: Request, call_next):
                 )
             return HTMLResponse(
                 status_code=429,
-                content=(
-                    "<h1>Too Many Requests</h1>"
-                    "<p>You are sending requests too quickly. "
-                    f"Please retry in about {retry_after} seconds.</p>"
+                content=templates.get_template("rate_limited.html").render(
+                    {
+                        "retry_after": retry_after,
+                        "limit": _RATE_LIMIT_MAX_REQUESTS,
+                        "window_seconds": _RATE_LIMIT_WINDOW_SECONDS,
+                    }
                 ),
                 headers={"Retry-After": str(retry_after)},
             )
@@ -148,3 +151,10 @@ async def ask(request: Request, query: str = Form(...)) -> HTMLResponse:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/pdf/{filename}")
+async def get_pdf(filename: str):
+    if filename not in PDF_FILES:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    return FileResponse(PDF_FILES[filename], media_type="application/pdf")
