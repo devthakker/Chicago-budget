@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
+import math
+import threading
+import time
+from collections import defaultdict, deque
 from pathlib import Path
 import sys
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -18,6 +23,75 @@ app = FastAPI(title="Chicago Budget RAG")
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 engine = RAGEngine(ROOT / "data/index")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
+
+_RATE_LIMIT_ENABLED = (os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"})
+_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "20"))
+_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+_RATE_LIMIT_PATH = os.getenv("RATE_LIMIT_PATH", "/")
+_RATE_LIMIT_METHOD = os.getenv("RATE_LIMIT_METHOD", "POST").upper()
+_RATE_LIMIT_TRUST_PROXY = (os.getenv("RATE_LIMIT_TRUST_PROXY", "true").strip().lower() in {"1", "true", "yes", "on"})
+
+_rate_limit_store: dict[str, deque[float]] = defaultdict(deque)
+_rate_limit_lock = threading.Lock()
+
+
+def _client_ip(request: Request) -> str:
+    if _RATE_LIMIT_TRUST_PROXY:
+        forwarded = request.headers.get("x-forwarded-for", "").strip()
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("x-real-ip", "").strip()
+        if real_ip:
+            return real_ip
+    return request.client.host if request.client else "unknown"
+
+
+def _check_rate_limit(key: str) -> tuple[bool, int]:
+    now = time.monotonic()
+    window_start = now - _RATE_LIMIT_WINDOW_SECONDS
+
+    with _rate_limit_lock:
+        hits = _rate_limit_store[key]
+        while hits and hits[0] <= window_start:
+            hits.popleft()
+
+        if len(hits) >= _RATE_LIMIT_MAX_REQUESTS:
+            retry_after = max(1, int(math.ceil(_RATE_LIMIT_WINDOW_SECONDS - (now - hits[0]))))
+            return False, retry_after
+
+        hits.append(now)
+        return True, 0
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if (
+        _RATE_LIMIT_ENABLED
+        and request.method.upper() == _RATE_LIMIT_METHOD
+        and request.url.path == _RATE_LIMIT_PATH
+    ):
+        ip = _client_ip(request)
+        allowed, retry_after = _check_rate_limit(f"{request.method}:{request.url.path}:{ip}")
+        if not allowed:
+            if request.headers.get("accept", "").lower().find("application/json") >= 0:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "Rate limit exceeded",
+                        "retry_after_seconds": retry_after,
+                    },
+                    headers={"Retry-After": str(retry_after)},
+                )
+            return HTMLResponse(
+                status_code=429,
+                content=(
+                    "<h1>Too Many Requests</h1>"
+                    "<p>You are sending requests too quickly. "
+                    f"Please retry in about {retry_after} seconds.</p>"
+                ),
+                headers={"Retry-After": str(retry_after)},
+            )
+    return await call_next(request)
 
 
 @app.get("/", response_class=HTMLResponse)

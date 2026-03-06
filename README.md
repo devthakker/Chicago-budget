@@ -162,3 +162,30 @@ Reranking controls:
 - `RAG_RERANKER_MODEL` (default `cross-encoder/ms-marco-MiniLM-L-6-v2`)
 
 If cross-encoder dependencies are not installed, reranking falls back to heuristic ranking.
+
+## Rate limiting
+
+The web app now includes an in-memory per-IP rate limiter for `POST /` by default.
+
+Defaults:
+- `RATE_LIMIT_ENABLED=true`
+- `RATE_LIMIT_MAX_REQUESTS=20`
+- `RATE_LIMIT_WINDOW_SECONDS=60`
+- `RATE_LIMIT_METHOD=POST`
+- `RATE_LIMIT_PATH=/`
+- `RATE_LIMIT_TRUST_PROXY=true`
+
+Example stricter public setting:
+
+```bash
+RATE_LIMIT_MAX_REQUESTS=10 RATE_LIMIT_WINDOW_SECONDS=60 docker compose up --build
+```
+
+Disable temporarily:
+
+```bash
+RATE_LIMIT_ENABLED=false docker compose up --build
+```
+
+Notes:
+- This limiter is process-local memory. If you scale to multiple app instances, use a shared limiter (Redis-based) so limits are enforced consistently.
