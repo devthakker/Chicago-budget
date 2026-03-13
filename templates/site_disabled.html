@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Temporarily Disabled</title>
+    <style>
+      :root {
+        --bg: #f5f3ef;
+        --ink: #121619;
+        --muted: #4b5563;
+        --surface: #fffdf7;
+        --line: #d8d2c8;
+        --accent: #0077b6;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: radial-gradient(circle at 10% 10%, #fffaf0, var(--bg) 40%);
+        font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+        color: var(--ink);
+      }
+      .card {
+        width: min(700px, 100%);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1.25rem;
+      }
+      h1 {
+        margin: 0.25rem 0 0.75rem;
+        font-size: clamp(1.5rem, 3vw, 2.2rem);
+      }
+      p {
+        color: var(--muted);
+      }
+      .actions {
+        margin-top: 1rem;
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }
+      a {
+        text-decoration: none;
+        border-radius: 8px;
+        padding: 0.55rem 0.85rem;
+        font-weight: 600;
+      }
+      .primary {
+        background: var(--accent);
+        color: #fff;
+      }
+      .secondary {
+        color: var(--accent);
+        border: 1px solid var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card" role="main">
+      <h1>This site is temporarily disabled</h1>
+      <p>
+        The public instance is currently turned off. If you want to run it yourself,
+        use the open-source repo below.
+      </p>
+      <div class="actions">
+        <a class="primary" href="{{ repo_url }}" target="_blank" rel="noopener noreferrer">Open GitHub Repo</a>
+      </div>
+    </main>
+  </body>
+</html>

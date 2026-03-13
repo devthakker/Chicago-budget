@@ -100,6 +100,31 @@ pre {
   margin: 0;
 }
 
+.export-actions {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.export-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-right: 0.2rem;
+}
+
+.export-form {
+  margin: 0;
+}
+
+.export-btn {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 0.42rem 0.7rem;
+}
+
 .sources {
   list-style: none;
   margin: 0;

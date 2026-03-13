@@ -16,6 +16,7 @@ The system does:
 - Answers with page-level citations
 - Source links that open exact PDF pages (new tab or embedded viewer panel)
 - Clickable sample queries in the UI for quick testing
+- One-click export of query results to Markdown, JSON, or CSV
 
 ## 1) Setup
 
@@ -119,6 +120,21 @@ uvicorn app:app --reload --port 8000
 
 Then open [http://localhost:8000](http://localhost:8000).
 
+## Export query results
+
+After running a query in the UI, use the export buttons to download:
+- `Markdown` (`.md`)
+- `JSON` (`.json`)
+- `CSV` (`.csv`)
+
+You can also call export directly:
+
+```bash
+curl -L "http://localhost:8000/export?query=What%20grants%20mention%20ARPA%3F&fmt=markdown" -o export.md
+```
+
+`fmt` supports: `markdown`, `json`, `csv`.
+
 ## Docker
 
 ```bash
@@ -213,6 +229,21 @@ RATE_LIMIT_ENABLED=false docker compose up --build
 
 Notes:
 - This limiter is process-local memory. If you scale to multiple app instances, use a shared limiter (Redis-based) so limits are enforced consistently.
+
+## Site on/off switch
+
+You can disable the site with an env flag and show a temporary disabled page that links to your repo.
+
+- `SITE_ENABLED=true|false` (default `true`)
+- `SITE_DISABLED_REPO_URL` (default `https://github.com`)
+
+Example:
+
+```bash
+SITE_ENABLED=false SITE_DISABLED_REPO_URL=https://github.com/your-org/your-repo docker compose up --build
+```
+
+When disabled, the app returns a temporary disabled page (health endpoint remains available).
 
 ## Ubuntu fix: `docker-compose-plugin` not found
 

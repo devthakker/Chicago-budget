@@ -36,6 +36,8 @@ services:
       - RATE_LIMIT_METHOD=${RATE_LIMIT_METHOD:-POST}
       - RATE_LIMIT_PATH=${RATE_LIMIT_PATH:-/}
       - RATE_LIMIT_TRUST_PROXY=${RATE_LIMIT_TRUST_PROXY:-true}
+      - SITE_ENABLED=${SITE_ENABLED:-true}
+      - SITE_DISABLED_REPO_URL=${SITE_DISABLED_REPO_URL:-https://github.com}
     volumes:
       - rag_index:/app/data/index
 

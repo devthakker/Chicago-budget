@@ -5,12 +5,16 @@ import os
 import math
 import threading
 import time
+import csv
+import io
+import re
+import json
 from collections import defaultdict, deque
 from pathlib import Path
 import sys
 
-from fastapi import FastAPI, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi import FastAPI, Form, Request, HTTPException, Query
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -38,6 +42,8 @@ _RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 _RATE_LIMIT_PATH = os.getenv("RATE_LIMIT_PATH", "/")
 _RATE_LIMIT_METHOD = os.getenv("RATE_LIMIT_METHOD", "POST").upper()
 _RATE_LIMIT_TRUST_PROXY = (os.getenv("RATE_LIMIT_TRUST_PROXY", "true").strip().lower() in {"1", "true", "yes", "on"})
+_SITE_ENABLED = (os.getenv("SITE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"})
+_SITE_DISABLED_REPO_URL = os.getenv("SITE_DISABLED_REPO_URL", "https://github.com")
 
 _rate_limit_store: dict[str, deque[float]] = defaultdict(deque)
 _rate_limit_lock = threading.Lock()
@@ -104,6 +110,25 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def site_enabled_middleware(request: Request, call_next):
+    if _SITE_ENABLED:
+        return await call_next(request)
+
+    path = request.url.path
+    if path == "/health":
+        return await call_next(request)
+
+    return HTMLResponse(
+        status_code=503,
+        content=templates.get_template("site_disabled.html").render(
+            {
+                "repo_url": _SITE_DISABLED_REPO_URL,
+            }
+        ),
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
@@ -168,3 +193,84 @@ async def get_pdf(filename: str):
     if filename not in PDF_FILES:
         raise HTTPException(status_code=404, detail="PDF not found")
     return FileResponse(PDF_FILES[filename], media_type="application/pdf")
+
+
+def _slug(value: str, max_len: int = 60) -> str:
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
+    return (s[:max_len].strip("-") or "query")
+
+
+def _to_markdown(query: str, payload: dict) -> str:
+    lines = [
+        "# Chicago Budget Query Export",
+        "",
+        f"## Query",
+        query,
+        "",
+        "## Answer",
+        payload.get("answer", ""),
+        "",
+        "## Sources",
+    ]
+    for i, r in enumerate(payload.get("results", []), start=1):
+        lines.append(
+            f"{i}. {r.get('source_file')} p.{r.get('page_start')}-{r.get('page_end')} "
+            f"(score={r.get('score', 0):.3f})"
+        )
+        snippet = str(r.get("text", "")).replace("\n", " ").strip()
+        lines.append(f"   - {snippet[:800]}{'...' if len(snippet) > 800 else ''}")
+    return "\n".join(lines) + "\n"
+
+
+def _to_csv(payload: dict) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["source_file", "page_start", "page_end", "score", "section", "snippet"])
+    for r in payload.get("results", []):
+        snippet = str(r.get("text", "")).replace("\n", " ").strip()
+        writer.writerow(
+            [
+                r.get("source_file"),
+                r.get("page_start"),
+                r.get("page_end"),
+                f"{float(r.get('score', 0)):.6f}",
+                r.get("section") or "",
+                snippet[:1000],
+            ]
+        )
+    return out.getvalue()
+
+
+@app.get("/export")
+async def export_query(
+    query: str = Query(..., min_length=1),
+    fmt: str = Query("markdown"),
+):
+    fmt = fmt.strip().lower()
+    if fmt not in {"markdown", "json", "csv"}:
+        raise HTTPException(status_code=400, detail="fmt must be one of: markdown, json, csv")
+
+    payload = engine.answer(query.strip(), top_k=6)
+    base = _slug(query)
+
+    if fmt == "json":
+        body = json.dumps(payload, indent=2)
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{base}.json"'},
+        )
+    if fmt == "csv":
+        body = _to_csv(payload)
+        return Response(
+            content=body,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{base}.csv"'},
+        )
+
+    body = _to_markdown(query, payload)
+    return Response(
+        content=body,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{base}.md"'},
+    )

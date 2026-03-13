@@ -41,6 +41,24 @@
       <section class="card">
         <h2>Answer</h2>
         <pre>{{ answer }}</pre>
+        <div class="export-actions">
+          <span class="export-label">Export this query:</span>
+          <form method="get" action="/export" class="export-form">
+            <input type="hidden" name="query" value="{{ query }}" />
+            <input type="hidden" name="fmt" value="markdown" />
+            <button type="submit" class="export-btn">Markdown</button>
+          </form>
+          <form method="get" action="/export" class="export-form">
+            <input type="hidden" name="query" value="{{ query }}" />
+            <input type="hidden" name="fmt" value="json" />
+            <button type="submit" class="export-btn">JSON</button>
+          </form>
+          <form method="get" action="/export" class="export-form">
+            <input type="hidden" name="query" value="{{ query }}" />
+            <input type="hidden" name="fmt" value="csv" />
+            <button type="submit" class="export-btn">CSV</button>
+          </form>
+        </div>
       </section>
       {% endif %}
 
