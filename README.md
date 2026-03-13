@@ -1,8 +1,5 @@
 # Chicago Budget RAG
 
-Full AWS + Vercel DNS deployment guide:
-- [DEPLOY_AWS_VERCEL_DNS.md](/Users/devin/Documents/GitHub/Chicago budget/DEPLOY_AWS_VERCEL_DNS.md)
-
 RAG pipeline over:
 - `chicago_Annual_Appropriation_Ordinance_2026.pdf`
 - `chicago_Grant_Details_Ordinance_2026.pdf`
