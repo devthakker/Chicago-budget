@@ -9,6 +9,7 @@ import csv
 import io
 import re
 import json
+import html
 from collections import defaultdict, deque
 from pathlib import Path
 import sys
@@ -232,6 +233,90 @@ def _json_ld_for_guide(guide: dict) -> str:
     return json.dumps(payload)
 
 
+def _format_inline_markdown(text: str) -> str:
+    escaped = html.escape(text)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", escaped)
+    return escaped
+
+
+def _render_answer_markdown(text: str | None) -> str:
+    if not text:
+        return ""
+
+    lines = text.splitlines()
+    parts: list[str] = []
+    paragraph: list[str] = []
+    list_stack: list[tuple[str, int]] = []
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph
+        if paragraph:
+            joined = " ".join(chunk.strip() for chunk in paragraph if chunk.strip())
+            if joined:
+                parts.append(f"<p>{_format_inline_markdown(joined)}</p>")
+            paragraph = []
+
+    def close_lists(min_indent: int = -1) -> None:
+        while list_stack and list_stack[-1][1] >= min_indent:
+            tag, _indent = list_stack.pop()
+            parts.append(f"</li></{tag}>")
+
+    def ensure_list(tag: str, indent: int) -> None:
+        while list_stack and indent < list_stack[-1][1]:
+            old_tag, _old_indent = list_stack.pop()
+            parts.append(f"</li></{old_tag}>")
+        if list_stack and indent == list_stack[-1][1] and tag != list_stack[-1][0]:
+            old_tag, _old_indent = list_stack.pop()
+            parts.append(f"</li></{old_tag}>")
+        if not list_stack or indent > list_stack[-1][1] or tag != list_stack[-1][0]:
+            parts.append(f"<{tag}><li>")
+            list_stack.append((tag, indent))
+        else:
+            parts.append("</li><li>")
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        if not line.strip():
+            flush_paragraph()
+            close_lists(0)
+            continue
+
+        heading_match = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if heading_match:
+            flush_paragraph()
+            close_lists(0)
+            level = len(heading_match.group(1))
+            parts.append(f"<h{level + 2}>{_format_inline_markdown(heading_match.group(2).strip())}</h{level + 2}>")
+            continue
+
+        ordered_match = re.match(r"^(\s*)(\d+)\.\s+(.*)$", line)
+        unordered_match = re.match(r"^(\s*)[-*]\s+(.*)$", line)
+        if ordered_match or unordered_match:
+            flush_paragraph()
+            if ordered_match:
+                indent = len(ordered_match.group(1))
+                content = ordered_match.group(3)
+                ensure_list("ol", indent)
+            else:
+                indent = len(unordered_match.group(1))
+                content = unordered_match.group(2)
+                ensure_list("ul", indent)
+            parts.append(_format_inline_markdown(content.strip()))
+            continue
+
+        if list_stack:
+            parts.append(f"<br>{_format_inline_markdown(line.strip())}")
+            continue
+
+        paragraph.append(line)
+
+    flush_paragraph()
+    close_lists(0)
+    return "".join(parts)
+
+
 def _render_home(request: Request, query: str = "", answer=None, results=None, error=None) -> HTMLResponse:
     response = templates.TemplateResponse(
         request,
@@ -239,6 +324,7 @@ def _render_home(request: Request, query: str = "", answer=None, results=None, e
         {
             "query": query,
             "answer": answer,
+            "answer_html": _render_answer_markdown(answer),
             "results": results or [],
             "error": error,
             "sample_queries": _sample_query_links(),
@@ -269,6 +355,7 @@ def _render_search(request: Request, query: str, answer, results, error) -> HTML
         {
             "query": query,
             "answer": answer,
+            "answer_html": _render_answer_markdown(answer),
             "results": results or [],
             "error": error,
             "sample_queries": _sample_query_links(),

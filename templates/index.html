@@ -99,7 +99,7 @@
       {% if answer %}
       <section class="card">
         <h2>Answer</h2>
-        <pre>{{ answer }}</pre>
+        <div class="answer-body">{{ answer_html | safe }}</div>
         <div class="export-actions">
           <span class="export-label">Export this query:</span>
           <form method="get" action="/export" class="export-form">

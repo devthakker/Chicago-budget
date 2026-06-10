@@ -100,6 +100,43 @@ pre {
   margin: 0;
 }
 
+.answer-body {
+  color: var(--ink);
+  line-height: 1.65;
+}
+
+.answer-body p:first-child,
+.answer-body ol:first-child,
+.answer-body ul:first-child {
+  margin-top: 0;
+}
+
+.answer-body p {
+  margin: 0 0 0.9rem;
+}
+
+.answer-body ol,
+.answer-body ul {
+  margin: 0 0 0.9rem 1.35rem;
+  padding: 0;
+}
+
+.answer-body li {
+  margin: 0.35rem 0;
+}
+
+.answer-body strong {
+  color: var(--ink);
+}
+
+.answer-body code {
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.95em;
+  background: #f0ece4;
+  border-radius: 6px;
+  padding: 0.12rem 0.35rem;
+}
+
 .export-actions {
   margin-top: 0.85rem;
   display: flex;
