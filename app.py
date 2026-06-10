@@ -30,6 +30,8 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 engine = RAGEngine(ROOT / "data/index")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 PDF_FILES = {p.name: p for p in ROOT.glob("*.pdf")}
+FAVICON_FILE = ROOT / "static" / "favicon.ico"
+ICON_FILE = ROOT / "static" / "icon.png"
 SITE_NAME = "Chicago Budget Search"
 BASE_URL = os.getenv("BASE_URL", "https://chicago-budget.thecommonnews.com").rstrip("/")
 DEFAULT_DESCRIPTION = (
@@ -344,6 +346,7 @@ def _render_home(request: Request, query: str = "", answer=None, results=None, e
             "featured_queries": _featured_query_links(limit=6),
             "more_popular_queries": _popular_query_links()[6:],
             "guides": _guide_links(),
+            "base_url": BASE_URL,
             "page_title": SITE_NAME,
             "meta_description": DEFAULT_DESCRIPTION,
             "canonical_url": BASE_URL,
@@ -377,6 +380,7 @@ def _render_search(request: Request, query: str, answer, results, error) -> HTML
             "featured_queries": _featured_query_links(limit=5, exclude=query),
             "more_popular_queries": [],
             "guides": _guide_links(),
+            "base_url": BASE_URL,
             "page_title": title,
             "meta_description": description,
             "canonical_url": _absolute_url(_search_url(query)),
@@ -497,6 +501,7 @@ async def guides_index(request: Request) -> HTMLResponse:
         "guides.html",
         {
             "guides": _guide_links(),
+            "base_url": BASE_URL,
             "page_title": f"Chicago Budget Guides | {SITE_NAME}",
             "meta_description": "Plain-language guides for understanding the Chicago FY2026 budget and grant ordinances.",
             "canonical_url": _absolute_url("/guides"),
@@ -526,6 +531,7 @@ async def guide_detail(request: Request, slug: str) -> HTMLResponse:
             "guide": guide,
             "guide_query_href": _search_url(guide["query"]),
             "related_queries": _popular_query_links()[:6],
+            "base_url": BASE_URL,
             "page_title": f"{guide['title']} | {SITE_NAME}",
             "meta_description": guide["summary"],
             "canonical_url": _absolute_url(f"/guides/{slug}"),
@@ -539,6 +545,20 @@ async def guide_detail(request: Request, slug: str) -> HTMLResponse:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/favicon.ico")
+async def favicon() -> FileResponse:
+    if not FAVICON_FILE.exists():
+        raise HTTPException(status_code=404, detail="favicon not found")
+    return FileResponse(FAVICON_FILE, media_type="image/x-icon")
+
+
+@app.get("/icon.png")
+async def icon_png() -> FileResponse:
+    if not ICON_FILE.exists():
+        raise HTTPException(status_code=404, detail="icon not found")
+    return FileResponse(ICON_FILE, media_type="image/png")
 
 
 @app.get("/robots.txt")
