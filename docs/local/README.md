@@ -67,11 +67,25 @@ export OLLAMA_EMBED_MODEL=qwen3-embedding:4b
 
 ### AWS Bedrock
 
+For this app, the cost-efficient Bedrock starting point is:
+
+- chat: `Amazon Nova Micro`
+- embeddings: `Amazon Titan Text Embeddings V2`
+
+Verify the available Amazon model IDs in your account and region:
+
+```bash
+aws bedrock list-foundation-models \
+  --region us-east-2 \
+  --query 'modelSummaries[?providerName==`Amazon`].[modelId]' \
+  --output text
+```
+
 ```bash
 export LLM_PROVIDER=bedrock
 export EMBEDDING_PROVIDER=bedrock
-export AWS_REGION=us-east-1
-export BEDROCK_CHAT_MODEL=anthropic.claude-3-5-sonnet-20241022-v2:0
+export AWS_REGION=us-east-2
+export BEDROCK_CHAT_MODEL=amazon.nova-micro-v1:0
 export BEDROCK_EMBED_MODEL=amazon.titan-embed-text-v2:0
 ```
 
@@ -160,7 +174,7 @@ LLM_PROVIDER=ollama EMBEDDING_PROVIDER=ollama OLLAMA_BASE_URL=http://host.docker
 ### Bedrock With Docker
 
 ```bash
-LLM_PROVIDER=bedrock EMBEDDING_PROVIDER=bedrock AWS_REGION=us-east-1 docker compose up --build
+LLM_PROVIDER=bedrock EMBEDDING_PROVIDER=bedrock AWS_REGION=us-east-2 docker compose up --build
 ```
 
 ## Export

@@ -773,7 +773,7 @@ def _generate_answer_bedrock(prompt: str) -> str:
     if not region:
         raise RuntimeError("AWS_REGION or AWS_DEFAULT_REGION must be set for Bedrock")
 
-    model = os.getenv("BEDROCK_CHAT_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0")
+    model = os.getenv("BEDROCK_CHAT_MODEL", "amazon.nova-micro-v1:0")
     client = boto3.client("bedrock-runtime", region_name=region)
 
     response = client.converse(

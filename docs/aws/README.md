@@ -88,7 +88,7 @@ docker compose version
 Clone the repo:
 
 ```bash
-git clone <YOUR_REPO_URL>
+git clone https://github.com/devthakker/Chicago-budget.git
 cd "Chicago budget"
 ```
 
@@ -112,6 +112,27 @@ SITE_DISABLED_REPO_URL=https://github.com/your-org/your-repo
 ### Option B: Bedrock
 
 Lightsail does not give you the same straightforward EC2-instance-profile path most people use on EC2. For the simplest setup, configure AWS credentials explicitly on the server with `aws configure`, or export `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `.env`.
+
+For this app, the cost-efficient Bedrock recommendation is:
+
+- chat model: `Amazon Nova Micro`
+- embedding model: `Amazon Titan Text Embeddings V2`
+
+Why:
+
+- AWS documents Titan Text Embeddings V2 as their retrieval-oriented embedding model for RAG and document search, with model ID `amazon.titan-embed-text-v2:0`. [Titan embedding docs](https://docs.aws.amazon.com/bedrock/latest/userguide/titan-embedding-models.html)
+- AWS pricing shows Anthropic Claude 3.5 Sonnet extended access in `US East (Ohio)` at `$6.00` per 1M input tokens and `$30.00` per 1M output tokens, which is substantially more expensive than the low-cost Bedrock-native path you should start with for a public search app. [Bedrock pricing](https://aws.amazon.com/bedrock/pricing/)
+
+Because Bedrock's public model catalog is now surfaced through an interactive listing, verify the exact chat model ID available in your account and region before launch:
+
+```bash
+aws bedrock list-foundation-models \
+  --region us-east-2 \
+  --query 'modelSummaries[?providerName==`Amazon`].[modelId]' \
+  --output text
+```
+
+Use the cheapest text-generation-capable Amazon Nova model returned there. The template defaults to `amazon.nova-micro-v1:0`, which is the intended low-cost starting point.
 
 Copy the template:
 
@@ -149,32 +170,20 @@ Then verify Bedrock model access with a direct invocation:
 
 ```bash
 python3 - <<'PY'
-import json
 import os
 import boto3
 
-region = os.environ.get("AWS_REGION", "us-east-1")
-model_id = os.environ.get("BEDROCK_CHAT_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0")
+region = os.environ.get("AWS_REGION", "us-east-2")
+model_id = os.environ.get("BEDROCK_CHAT_MODEL", "amazon.nova-micro-v1:0")
 
 client = boto3.client("bedrock-runtime", region_name=region)
 
-body = {
-    "anthropic_version": "bedrock-2023-05-31",
-    "max_tokens": 32,
-    "messages": [
-        {"role": "user", "content": [{"type": "text", "text": "Reply with the single word: ok"}]}
-    ],
-}
-
-response = client.invoke_model(
+response = client.converse(
     modelId=model_id,
-    body=json.dumps(body),
-    contentType="application/json",
-    accept="application/json",
+    messages=[{"role": "user", "content": [{"text": "Reply with the single word: ok"}]}],
+    inferenceConfig={"maxTokens": 32, "temperature": 0.1},
 )
-
-payload = json.loads(response["body"].read())
-print(json.dumps(payload, indent=2))
+print(response["output"]["message"]["content"])
 PY
 ```
 
