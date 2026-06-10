@@ -240,7 +240,7 @@ Example Caddyfile:
 
 ```bash
 sudo tee /etc/caddy/Caddyfile > /dev/null <<'CADDY'
-example.com, www.example.com, budget.example.com {
+chicago-budget.thecommonnews.com {
     reverse_proxy 127.0.0.1:8000
 }
 CADDY
