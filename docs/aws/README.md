@@ -123,16 +123,19 @@ Why:
 - AWS documents Titan Text Embeddings V2 as their retrieval-oriented embedding model for RAG and document search, with model ID `amazon.titan-embed-text-v2:0`. [Titan embedding docs](https://docs.aws.amazon.com/bedrock/latest/userguide/titan-embedding-models.html)
 - AWS pricing shows Anthropic Claude 3.5 Sonnet extended access in `US East (Ohio)` at `$6.00` per 1M input tokens and `$30.00` per 1M output tokens, which is substantially more expensive than the low-cost Bedrock-native path you should start with for a public search app. [Bedrock pricing](https://aws.amazon.com/bedrock/pricing/)
 
-Because Bedrock's public model catalog is now surfaced through an interactive listing, verify the exact chat model ID available in your account and region before launch:
+For `Amazon Nova Micro`, Bedrock on-demand inference uses an inference profile. Use an inference profile ID or ARN for `BEDROCK_CHAT_MODEL`, not the raw model ID.
+
+List the available system-defined inference profiles in `us-east-2`:
 
 ```bash
-aws bedrock list-foundation-models \
+aws bedrock list-inference-profiles \
   --region us-east-2 \
-  --query 'modelSummaries[?providerName==`Amazon`].[modelId]' \
-  --output text
+  --type-equals SYSTEM_DEFINED \
+  --query 'inferenceProfileSummaries[?contains(inferenceProfileName, `Nova Micro`) || contains(inferenceProfileId, `nova-micro`)].[inferenceProfileId,inferenceProfileArn]' \
+  --output table
 ```
 
-Use the cheapest text-generation-capable Amazon Nova model returned there. The template defaults to `amazon.nova-micro-v1:0`, which is the intended low-cost starting point.
+Set `BEDROCK_CHAT_MODEL` to the returned inference profile ID or ARN for Nova Micro. If you want the lowest-cost routing and your compliance requirements allow it, prefer the global or broader cross-Region inference profile when one is available. AWS documents that global cross-Region inference is approximately 10% cheaper than standard geographic pricing. [Cross-Region inference](https://docs.aws.amazon.com/bedrock/latest/userguide/cross-region-inference.html)
 
 Copy the template:
 
@@ -174,7 +177,9 @@ import os
 import boto3
 
 region = os.environ.get("AWS_REGION", "us-east-2")
-model_id = os.environ.get("BEDROCK_CHAT_MODEL", "amazon.nova-micro-v1:0")
+model_id = os.environ.get("BEDROCK_CHAT_MODEL")
+if not model_id:
+    raise RuntimeError("Set BEDROCK_CHAT_MODEL to a Nova Micro inference profile ID or ARN")
 
 client = boto3.client("bedrock-runtime", region_name=region)
 

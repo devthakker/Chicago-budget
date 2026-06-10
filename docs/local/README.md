@@ -72,20 +72,23 @@ For this app, the cost-efficient Bedrock starting point is:
 - chat: `Amazon Nova Micro`
 - embeddings: `Amazon Titan Text Embeddings V2`
 
-Verify the available Amazon model IDs in your account and region:
+For `Amazon Nova Micro`, Bedrock on-demand inference uses an inference profile. Use an inference profile ID or ARN for `BEDROCK_CHAT_MODEL`, not the raw model ID.
+
+Verify the available Nova Micro inference profiles in your account and region:
 
 ```bash
-aws bedrock list-foundation-models \
+aws bedrock list-inference-profiles \
   --region us-east-2 \
-  --query 'modelSummaries[?providerName==`Amazon`].[modelId]' \
-  --output text
+  --type-equals SYSTEM_DEFINED \
+  --query 'inferenceProfileSummaries[?contains(inferenceProfileName, `Nova Micro`) || contains(inferenceProfileId, `nova-micro`)].[inferenceProfileId,inferenceProfileArn]' \
+  --output table
 ```
 
 ```bash
 export LLM_PROVIDER=bedrock
 export EMBEDDING_PROVIDER=bedrock
 export AWS_REGION=us-east-2
-export BEDROCK_CHAT_MODEL=amazon.nova-micro-v1:0
+export BEDROCK_CHAT_MODEL=replace_with_nova_micro_inference_profile_id_or_arn
 export BEDROCK_EMBED_MODEL=amazon.titan-embed-text-v2:0
 ```
 
