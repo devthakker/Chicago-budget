@@ -49,7 +49,7 @@
         </div>
       </section>
       {% endif %}
-      {% if sample_queries and sample_queries|length > 0 %}
+      {% if sample_queries and sample_queries|length > 0 and page_kind != 'search' %}
       <section class="card sample-queries">
         <h2>Try A Sample Query</h2>
         <div class="sample-grid">
@@ -59,16 +59,26 @@
         </div>
       </section>
       {% endif %}
-      {% if popular_queries and popular_queries|length > 0 %}
+      {% if popular_queries and popular_queries|length > 0 and page_kind != 'search' %}
       <section class="card popular-searches">
         <h2>Popular Chicago Budget Questions</h2>
-        <ul class="popular-list">
-          {% for item in popular_queries %}
-          <li>
-            <a href="{{ item.href }}" data-track="popular-query" data-query="{{ item.query }}">{{ item.query }}</a>
-          </li>
+        <div class="popular-chip-grid">
+          {% for item in featured_queries %}
+          <a href="{{ item.href }}" class="sample-btn" data-track="popular-query" data-query="{{ item.query }}">{{ item.query }}</a>
           {% endfor %}
-        </ul>
+        </div>
+        {% if more_popular_queries and more_popular_queries|length > 0 %}
+        <details class="popular-details">
+          <summary>More questions</summary>
+          <ul class="popular-list">
+            {% for item in more_popular_queries %}
+            <li>
+              <a href="{{ item.href }}" data-track="popular-query" data-query="{{ item.query }}">{{ item.query }}</a>
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
       </section>
       {% endif %}
       {% if guides and guides|length > 0 and page_kind != 'search' %}
@@ -162,6 +172,19 @@
             loading="lazy"
           ></iframe>
         </section>
+      </section>
+      {% endif %}
+
+      {% if page_kind == 'search' and featured_queries and featured_queries|length > 0 %}
+      <section class="card followup-queries">
+        <div class="section-head">
+          <h2>Try Another Question</h2>
+        </div>
+        <div class="sample-grid compact-grid">
+          {% for item in featured_queries %}
+          <a href="{{ item.href }}" class="sample-btn" data-track="popular-query" data-query="{{ item.query }}">{{ item.query }}</a>
+          {% endfor %}
+        </div>
       </section>
       {% endif %}
     </main>

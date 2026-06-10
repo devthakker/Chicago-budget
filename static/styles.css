@@ -201,6 +201,10 @@ p {
   gap: 1rem;
 }
 
+.compact-grid {
+  gap: 0.65rem;
+}
+
 .sample-form {
   margin: 0;
 }
@@ -219,6 +223,12 @@ p {
 
 .sample-btn:hover {
   background: #eef7ff;
+}
+
+.popular-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
 }
 
 .results-layout {
@@ -266,7 +276,7 @@ p {
 
 .popular-list {
   list-style: none;
-  margin: 0;
+  margin: 0.8rem 0 0;
   padding: 0;
   display: grid;
   gap: 0.7rem;
@@ -275,6 +285,27 @@ p {
 .popular-list li {
   border-top: 1px dashed var(--line);
   padding-top: 0.7rem;
+}
+
+.popular-details {
+  margin-top: 0.9rem;
+  border-top: 1px dashed var(--line);
+  padding-top: 0.9rem;
+}
+
+.popular-details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+  list-style: none;
+}
+
+.popular-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.followup-queries {
+  margin-top: 1rem;
 }
 
 .section-head {

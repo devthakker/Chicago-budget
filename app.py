@@ -175,6 +175,18 @@ def _popular_query_links() -> list[dict[str, str]]:
     return [{"query": q, "href": _search_url(q)} for q in POPULAR_QUERY_PAGES]
 
 
+def _featured_query_links(limit: int = 6, exclude: str | None = None) -> list[dict[str, str]]:
+    normalized_exclude = _normalize_query(exclude or "")
+    items: list[dict[str, str]] = []
+    for q in POPULAR_QUERY_PAGES:
+        if normalized_exclude and _normalize_query(q) == normalized_exclude:
+            continue
+        items.append({"query": q, "href": _search_url(q)})
+        if len(items) >= limit:
+            break
+    return items
+
+
 def _guide_links() -> list[dict[str, str]]:
     return [
         {
@@ -329,6 +341,8 @@ def _render_home(request: Request, query: str = "", answer=None, results=None, e
             "error": error,
             "sample_queries": _sample_query_links(),
             "popular_queries": _popular_query_links(),
+            "featured_queries": _featured_query_links(limit=6),
+            "more_popular_queries": _popular_query_links()[6:],
             "guides": _guide_links(),
             "page_title": SITE_NAME,
             "meta_description": DEFAULT_DESCRIPTION,
@@ -360,6 +374,8 @@ def _render_search(request: Request, query: str, answer, results, error) -> HTML
             "error": error,
             "sample_queries": _sample_query_links(),
             "popular_queries": _popular_query_links(),
+            "featured_queries": _featured_query_links(limit=5, exclude=query),
+            "more_popular_queries": [],
             "guides": _guide_links(),
             "page_title": title,
             "meta_description": description,
