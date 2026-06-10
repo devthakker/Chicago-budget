@@ -20,7 +20,7 @@ body {
 }
 
 .shell {
-  max-width: 900px;
+  max-width: 1040px;
   margin: 3rem auto;
   padding: 0 1rem 3rem;
 }
@@ -169,6 +169,7 @@ p {
 }
 
 .sample-btn {
+  display: inline-block;
   background: #f7fbff;
   color: var(--accent);
   border: 1px solid rgba(0, 119, 182, 0.35);
@@ -176,6 +177,7 @@ p {
   padding: 0.45rem 0.8rem;
   font-size: 0.9rem;
   text-align: left;
+  text-decoration: none;
 }
 
 .sample-btn:hover {
@@ -192,6 +194,82 @@ p {
 
 .results-layout .card {
   margin-top: 0;
+}
+
+.intro-card p,
+.guide-tile p,
+.guide-section p {
+  color: var(--muted);
+}
+
+.mini-links {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.mini-links a,
+.section-head a,
+.popular-list a,
+.guide-tile a,
+.viewer-head a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.mini-links a:hover,
+.section-head a:hover,
+.popular-list a:hover,
+.guide-tile a:hover,
+.viewer-head a:hover {
+  text-decoration: underline;
+}
+
+.popular-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.popular-list li {
+  border-top: 1px dashed var(--line);
+  padding-top: 0.7rem;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.guide-tile {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  background: #fff;
+}
+
+.guide-tile h3,
+.guide-tile h2 {
+  margin-top: 0;
+  margin-bottom: 0.55rem;
+}
+
+.guide-article .guide-section + .guide-section {
+  margin-top: 1.25rem;
+  border-top: 1px dashed var(--line);
+  padding-top: 1.25rem;
 }
 
 .source-actions {
@@ -250,6 +328,10 @@ p {
 
 @media (max-width: 980px) {
   .results-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-grid {
     grid-template-columns: 1fr;
   }
 

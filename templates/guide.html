@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title }}</title>
+    <meta name="description" content="{{ meta_description }}" />
+    <meta name="robots" content="{{ robots_value }}" />
+    <link rel="canonical" href="{{ canonical_url }}" />
+    <meta property="og:title" content="{{ page_title }}" />
+    <meta property="og:description" content="{{ meta_description }}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="{{ canonical_url }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{{ json_ld | safe }}</script>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">Chicago Budget Guide</p>
+        <h1>{{ guide.title }}</h1>
+        <p class="sub">{{ guide.summary }}</p>
+        <div class="mini-links">
+          <a href="/guides">All guides</a>
+          <a href="{{ guide_query_href }}">Run related search</a>
+        </div>
+      </header>
+
+      <article class="card guide-article">
+        {% for section in guide.sections %}
+        <section class="guide-section">
+          <h2>{{ section.heading }}</h2>
+          <p>{{ section.body }}</p>
+        </section>
+        {% endfor %}
+      </article>
+
+      <section class="card popular-searches">
+        <h2>Related Searches</h2>
+        <ul class="popular-list">
+          {% for item in related_queries %}
+          <li>
+            <a href="{{ item.href }}" data-track="guide-related-query" data-query="{{ item.query }}">{{ item.query }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+    </main>
+    <script>
+      (() => {
+        const analyticsPayload = {{ analytics_payload | safe }};
+        const sendEvent = (event, extra = {}) => {
+          const payload = JSON.stringify({ event, ...analyticsPayload, ...extra });
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon("/analytics/event", payload);
+            return;
+          }
+          fetch("/analytics/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            keepalive: true
+          }).catch(() => {});
+        };
+
+        sendEvent("pageview");
+        document.querySelectorAll("[data-track]").forEach((el) => {
+          el.addEventListener("click", () => {
+            sendEvent(el.getAttribute("data-track"), {
+              query: el.getAttribute("data-query"),
+            });
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

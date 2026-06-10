@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title }}</title>
+    <meta name="description" content="{{ meta_description }}" />
+    <meta name="robots" content="{{ robots_value }}" />
+    <link rel="canonical" href="{{ canonical_url }}" />
+    <meta property="og:title" content="{{ page_title }}" />
+    <meta property="og:description" content="{{ meta_description }}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{{ canonical_url }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{{ json_ld | safe }}</script>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">Chicago FY2026 Guides</p>
+        <h1>Budget Guides</h1>
+        <p class="sub">Plain-language explainers for navigating the Chicago FY2026 budget and grant ordinances.</p>
+      </header>
+
+      <section class="card guides-preview">
+        <div class="guide-grid">
+          {% for guide in guides %}
+          <article class="guide-tile">
+            <h2><a href="{{ guide.href }}">{{ guide.title }}</a></h2>
+            <p>{{ guide.summary }}</p>
+            <div class="mini-links">
+              <a href="{{ guide.href }}">Read guide</a>
+              <a href="{{ guide.query_href }}">Open related search</a>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+    </main>
+    <script>
+      (() => {
+        const analyticsPayload = {{ analytics_payload | safe }};
+        const payload = JSON.stringify({ event: "pageview", ...analyticsPayload });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/analytics/event", payload);
+          return;
+        }
+        fetch("/analytics/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+      })();
+    </script>
+  </body>
+</html>

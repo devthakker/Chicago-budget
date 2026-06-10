@@ -3,31 +3,90 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Chicago Budget</title>
+    <title>{{ page_title }}</title>
+    <meta name="description" content="{{ meta_description }}" />
+    <meta name="robots" content="{{ robots_value }}" />
+    <link rel="canonical" href="{{ canonical_url }}" />
+    <meta property="og:title" content="{{ page_title }}" />
+    <meta property="og:description" content="{{ meta_description }}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{{ canonical_url }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{{ json_ld | safe }}</script>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <main class="shell">
       <header>
         <p class="eyebrow">City of Chicago FY2026</p>
-        <h1>Budget Document Q&A</h1>
-        <p class="sub">Ask a question and get answers grounded in ordinance pages.</p>
+        <h1>{% if page_kind == 'search' and query %}{{ query }}{% else %}Chicago Budget Document Search{% endif %}</h1>
+        <p class="sub">
+          {% if page_kind == 'search' and query %}
+          Search results across the FY2026 budget and grant ordinances, grounded in exact source pages.
+          {% else %}
+          Ask questions about Chicago's FY2026 budget and grant ordinances in plain English, then open the exact pages behind each answer.
+          {% endif %}
+        </p>
       </header>
 
-      <form method="post" class="ask-form">
+      <form method="get" action="/search" class="ask-form">
         <label for="query">Question</label>
-        <textarea id="query" name="query" rows="3" placeholder="Example: What is budgeted for the Office of the Mayor?" required>{{ query }}</textarea>
+        <textarea id="query" name="q" rows="3" placeholder="Example: What is budgeted for the Office of the Mayor?" required>{{ query }}</textarea>
         <button type="submit">Ask</button>
       </form>
+      {% if page_kind != 'search' %}
+      <section class="card intro-card">
+        <h2>What This Tool Covers</h2>
+        <p>
+          This search tool indexes the Chicago FY2026 Annual Appropriation Ordinance and the Grant Details Ordinance.
+          It is designed for residents, reporters, researchers, and small business owners who need fast access to budget
+          answers without manually digging through hundreds of PDF pages.
+        </p>
+        <div class="mini-links">
+          <a href="/guides">Read budget guides</a>
+          <a href="/pdf/chicago_Annual_Appropriation_Ordinance_2026.pdf#page=1" target="_blank" rel="noopener noreferrer">Open annual appropriation PDF</a>
+          <a href="/pdf/chicago_Grant_Details_Ordinance_2026.pdf#page=1" target="_blank" rel="noopener noreferrer">Open grant details PDF</a>
+        </div>
+      </section>
+      {% endif %}
       {% if sample_queries and sample_queries|length > 0 %}
       <section class="card sample-queries">
         <h2>Try A Sample Query</h2>
         <div class="sample-grid">
           {% for sq in sample_queries %}
-          <form method="post" class="sample-form">
-            <input type="hidden" name="query" value="{{ sq }}" />
-            <button type="submit" class="sample-btn">{{ sq }}</button>
-          </form>
+          <a href="{{ sq.href }}" class="sample-btn" data-track="sample-query" data-query="{{ sq.query }}">{{ sq.query }}</a>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+      {% if popular_queries and popular_queries|length > 0 %}
+      <section class="card popular-searches">
+        <h2>Popular Chicago Budget Questions</h2>
+        <ul class="popular-list">
+          {% for item in popular_queries %}
+          <li>
+            <a href="{{ item.href }}" data-track="popular-query" data-query="{{ item.query }}">{{ item.query }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+      {% if guides and guides|length > 0 and page_kind != 'search' %}
+      <section class="card guides-preview">
+        <div class="section-head">
+          <h2>Guides</h2>
+          <a href="/guides">View all guides</a>
+        </div>
+        <div class="guide-grid">
+          {% for guide in guides %}
+          <article class="guide-tile">
+            <h3><a href="{{ guide.href }}">{{ guide.title }}</a></h3>
+            <p>{{ guide.summary }}</p>
+            <div class="mini-links">
+              <a href="{{ guide.href }}">Read guide</a>
+              <a href="{{ guide.query_href }}">Open related search</a>
+            </div>
+          </article>
           {% endfor %}
         </div>
       </section>
@@ -78,10 +137,12 @@
                   type="button"
                   class="inline-open"
                   data-doc-url="{{ doc_url }}"
+                  data-track="source-viewer"
+                  data-href="{{ doc_url }}"
                 >
                   Open In Viewer
                 </button>
-                <a href="{{ doc_url }}" target="_blank" rel="noopener noreferrer">Open In New Tab</a>
+                <a href="{{ doc_url }}" target="_blank" rel="noopener noreferrer" data-track="source-tab" data-href="{{ doc_url }}">Open In New Tab</a>
               </div>
               <p>{{ r.text[:700] }}{% if r.text|length > 700 %}...{% endif %}</p>
             </li>
@@ -107,9 +168,35 @@
     <script>
       (() => {
         const frame = document.getElementById("pdfViewerFrame");
-        if (!frame) return;
         const popout = document.getElementById("viewerPopout");
         const buttons = document.querySelectorAll(".inline-open");
+        const analyticsPayload = {{ analytics_payload | safe }};
+        const sendEvent = (event, extra = {}) => {
+          const payload = JSON.stringify({ event, ...analyticsPayload, ...extra });
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon("/analytics/event", payload);
+            return;
+          }
+          fetch("/analytics/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            keepalive: true
+          }).catch(() => {});
+        };
+
+        sendEvent("pageview");
+
+        document.querySelectorAll("[data-track]").forEach((el) => {
+          el.addEventListener("click", () => {
+            sendEvent(el.getAttribute("data-track"), {
+              query: el.getAttribute("data-query"),
+              href: el.getAttribute("data-href"),
+            });
+          });
+        });
+
+        if (!frame) return;
         buttons.forEach((btn) => {
           btn.addEventListener("click", () => {
             const url = btn.getAttribute("data-doc-url");
