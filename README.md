@@ -1,271 +1,78 @@
 # Chicago Budget RAG
 
-RAG pipeline over:
+This project is a public-facing RAG application for the Chicago FY2026 budget documents. It lets users ask plain-English questions about the Annual Appropriation Ordinance and the Grant Details Ordinance, then returns answers with page-level citations and direct links back to the source PDFs.
+
+The system is designed around three goals:
+
+- retrieval quality for long civic PDFs
+- transparent source grounding with page citations
+- practical deployment for public use
+
+## What It Does
+
+- extracts text from the two source PDFs
+- chunks and indexes the content with page metadata
+- blends BM25 and optional vector retrieval
+- optionally reranks results with a cross-encoder
+- generates cited answers using OpenAI, Bedrock, or Ollama
+- lets users open exact source pages in a built-in viewer
+- supports exporting answers to Markdown, JSON, and CSV
+- includes evaluation tooling and tuning scripts for retrieval quality
+
+## Source Documents
+
 - `chicago_Annual_Appropriation_Ordinance_2026.pdf`
 - `chicago_Grant_Details_Ordinance_2026.pdf`
 
-The system does:
-- PDF text extraction (`pdftotext -layout`)
-- Improved chunking (smaller chunks + section-aware boundaries)
-- TOC suppression (TOC-like chunks are penalized and optionally filtered)
-- Hybrid retrieval (BM25 + optional embeddings)
-- Optional cross-encoder reranking path
-- Answers with page-level citations
-- Source links that open exact PDF pages (new tab or embedded viewer panel)
-- Clickable sample queries in the UI for quick testing
-- One-click export of query results to Markdown, JSON, or CSV
+## Project Structure
 
-## 1) Setup
+- [app.py](</Users/devin/Documents/GitHub/Chicago budget/app.py>): FastAPI app, routes, SEO pages, export endpoints, analytics hooks, runtime controls
+- [src/chicago_budget_rag/engine.py](</Users/devin/Documents/GitHub/Chicago budget/src/chicago_budget_rag/engine.py>): indexing, retrieval, reranking, answer generation, provider abstraction
+- [templates/](</Users/devin/Documents/GitHub/Chicago budget/templates>): HTML templates for search, guides, disabled page, and rate-limit page
+- [static/styles.css](</Users/devin/Documents/GitHub/Chicago budget/static/styles.css>): shared styling for the web UI
+- [build_index.py](</Users/devin/Documents/GitHub/Chicago budget/build_index.py>): offline index build entrypoint
+- [query_rag.py](</Users/devin/Documents/GitHub/Chicago budget/query_rag.py>): CLI query tool
+- [eval_rag.py](</Users/devin/Documents/GitHub/Chicago budget/eval_rag.py>): retrieval evaluation and tuning harness
+- [eval/questions.sample.json](</Users/devin/Documents/GitHub/Chicago budget/eval/questions.sample.json>): starter benchmark set
+- [docker-compose.yml](</Users/devin/Documents/GitHub/Chicago budget/docker-compose.yml>): containerized runtime configuration
+- [Dockerfile](</Users/devin/Documents/GitHub/Chicago budget/Dockerfile>): image build definition
+- [.env.openai.example](</Users/devin/Documents/GitHub/Chicago budget/.env.openai.example>): OpenAI-based runtime template
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+## Documentation
 
-Optional cross-encoder reranker dependencies:
+- Local launch: [docs/local/README.md](</Users/devin/Documents/GitHub/Chicago budget/docs/local/README.md>)
+- AWS launch: [docs/aws/README.md](</Users/devin/Documents/GitHub/Chicago budget/docs/aws/README.md>)
 
-```bash
-pip install -r requirements-reranker.txt
-```
+## Runtime Notes
 
-Optional provider setup examples:
+- `POST /` redirects to canonical `GET /search?q=...` URLs for crawlable search pages.
+- Curated search pages and guide pages are indexable; arbitrary search pages are `noindex,follow`.
+- `robots.txt` and `sitemap.xml` are served by the app.
+- The public site can be disabled with `SITE_ENABLED=false` while keeping health checks alive.
+- Query export is available through the UI and `GET /export`.
 
-OpenAI:
-```bash
-export LLM_PROVIDER=openai
-export EMBEDDING_PROVIDER=openai
-export OPENAI_API_KEY=your_key
-export OPENAI_CHAT_MODEL=gpt-4.1-mini
-export OPENAI_EMBED_MODEL=text-embedding-3-small
-```
+## Model Providers
 
-Ollama:
-```bash
-export LLM_PROVIDER=ollama
-export EMBEDDING_PROVIDER=ollama
-export OLLAMA_BASE_URL=http://localhost:11434
-export OLLAMA_CHAT_MODEL=llama3.2:latest
-export OLLAMA_EMBED_MODEL=qwen3-embedding:4b
-```
+The app supports:
 
-AWS Bedrock:
-```bash
-export LLM_PROVIDER=bedrock
-export EMBEDDING_PROVIDER=bedrock
-export AWS_REGION=us-east-1
-export BEDROCK_CHAT_MODEL=anthropic.claude-3-5-sonnet-20241022-v2:0
-export BEDROCK_EMBED_MODEL=amazon.titan-embed-text-v2:0
-```
+- OpenAI
+- AWS Bedrock
+- Ollama
 
-## 2) Build index
+Provider selection and model configuration are environment-driven.
 
-Default chunking now uses `max_tokens=450` and `overlap_tokens=70`:
+## SEO Surface
 
-```bash
-python3 build_index.py --pdf-dir . --index-dir data/index
-```
+The app includes:
 
-Override if needed:
+- canonical search result pages
+- guide landing pages
+- `robots.txt`
+- `sitemap.xml`
+- Open Graph and Twitter metadata
+- JSON-LD for home, search, and guide pages
+- internal linking through guides and curated searches
 
-```bash
-python3 build_index.py --max-tokens 400 --overlap-tokens 60
-```
+## Evaluation
 
-## 3) Query from CLI
-
-```bash
-python3 query_rag.py "What is budgeted for the Office of the Mayor?"
-```
-
-Override retrieval blend from CLI:
-
-```bash
-python3 query_rag.py "What grants mention ARPA?" --bm25-weight 0.9 --vector-weight 0.1
-```
-
-JSON output:
-
-```bash
-python3 query_rag.py "What grants mention ARPA?" --json
-```
-
-## 3b) Evaluate and tune retrieval
-
-A starter evaluation set is included at:
-- `eval/questions.sample.json`
-
-Run a single evaluation:
-
-```bash
-python3 eval_rag.py --questions-file eval/questions.sample.json --top-k 8 --show-queries
-```
-
-Run a tuning grid report (best BM25/vector blend):
-
-```bash
-python3 eval_rag.py --questions-file eval/questions.sample.json --top-k 8 --tune --bm25-grid "0.7,0.8,0.85,0.9,0.95"
-```
-
-JSON output is supported with `--json`.
-
-## 4) Run web app
-
-```bash
-uvicorn app:app --reload --port 8000
-```
-
-Then open [http://localhost:8000](http://localhost:8000).
-
-## Export query results
-
-After running a query in the UI, use the export buttons to download:
-- `Markdown` (`.md`)
-- `JSON` (`.json`)
-- `CSV` (`.csv`)
-
-You can also call export directly:
-
-```bash
-curl -L "http://localhost:8000/export?query=What%20grants%20mention%20ARPA%3F&fmt=markdown" -o export.md
-```
-
-`fmt` supports: `markdown`, `json`, `csv`.
-
-## Docker
-
-```bash
-docker compose up --build
-```
-
-Then open [http://localhost:8000](http://localhost:8000).
-
-Notes:
-- On first start, the container auto-builds `data/index/index.json`.
-- Index is stored in a persistent Docker volume (`rag_index`).
-- Force rebuild when embedding provider/model changes:
-
-```bash
-FORCE_REINDEX=1 docker compose up --build
-```
-
-Provider examples in Docker:
-
-```bash
-LLM_PROVIDER=openai EMBEDDING_PROVIDER=openai OPENAI_API_KEY=your_key docker compose up --build
-```
-
-```bash
-LLM_PROVIDER=ollama EMBEDDING_PROVIDER=ollama OLLAMA_CHAT_MODEL=llama3.2:latest OLLAMA_EMBED_MODEL=qwen3-embedding:4b docker compose up --build
-```
-
-## Ollama install + models
-
-Install Ollama:
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-Pull the two models used in this project:
-
-```bash
-ollama pull llama3.2:latest
-ollama pull qwen3-embedding:4b
-```
-
-Run Docker with those two models:
-
-```bash
-LLM_PROVIDER=ollama EMBEDDING_PROVIDER=ollama OLLAMA_BASE_URL=http://host.docker.internal:11434 OLLAMA_CHAT_MODEL=llama3.2:latest OLLAMA_EMBED_MODEL=qwen3-embedding:4b docker compose up --build
-```
-
-```bash
-LLM_PROVIDER=bedrock EMBEDDING_PROVIDER=bedrock AWS_REGION=us-east-1 docker compose up --build
-```
-
-## Retrieval tuning flags
-
-Set these as env vars (local or Docker):
-- `RAG_BM25_WEIGHT` (default `0.85`)
-- `RAG_VECTOR_WEIGHT` (default `0.15`)
-- `RAG_TOC_PENALTY` (default `0.35`)
-- `RAG_SUPPRESS_TOC` (default `true`)
-- `RAG_CANDIDATE_MULTIPLIER` (default `8`)
-
-Reranking controls:
-- `RAG_RERANKER=auto|cross-encoder|none` (default `auto`)
-- `RAG_RERANK_CANDIDATES` (default `30`)
-- `RAG_RERANKER_MODEL` (default `cross-encoder/ms-marco-MiniLM-L-6-v2`)
-
-If cross-encoder dependencies are not installed, reranking falls back to heuristic ranking.
-
-## Rate limiting
-
-The web app now includes an in-memory per-IP rate limiter for `POST /` by default.
-
-Defaults:
-- `RATE_LIMIT_ENABLED=true`
-- `RATE_LIMIT_MAX_REQUESTS=20`
-- `RATE_LIMIT_WINDOW_SECONDS=60`
-- `RATE_LIMIT_METHOD=POST`
-- `RATE_LIMIT_PATH=/`
-- `RATE_LIMIT_TRUST_PROXY=true`
-
-Example stricter public setting:
-
-```bash
-RATE_LIMIT_MAX_REQUESTS=10 RATE_LIMIT_WINDOW_SECONDS=60 docker compose up --build
-```
-
-Disable temporarily:
-
-```bash
-RATE_LIMIT_ENABLED=false docker compose up --build
-```
-
-Notes:
-- This limiter is process-local memory. If you scale to multiple app instances, use a shared limiter (Redis-based) so limits are enforced consistently.
-
-## Site on/off switch
-
-You can disable the site with an env flag and show a temporary disabled page that links to your repo.
-
-- `SITE_ENABLED=true|false` (default `true`)
-- `SITE_DISABLED_REPO_URL` (default `https://github.com`)
-
-Example:
-
-```bash
-SITE_ENABLED=false SITE_DISABLED_REPO_URL=https://github.com/your-org/your-repo docker compose up --build
-```
-
-When disabled, the app returns a temporary disabled page (health endpoint remains available).
-
-## Ubuntu fix: `docker-compose-plugin` not found
-
-If `sudo apt install docker-compose-plugin` fails with `Unable to locate package`, install Docker from Docker's official apt repo:
-
-```bash
-sudo apt update
-sudo apt install -y ca-certificates curl gnupg
-
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo $VERSION_CODENAME) stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin git
-```
-
-Verify:
-
-```bash
-docker --version
-docker compose version
-```
+Use [eval_rag.py](</Users/devin/Documents/GitHub/Chicago budget/eval_rag.py>) to measure hit rate and MRR across a benchmark set and tune BM25/vector blend settings before shipping retrieval changes.
