@@ -44,6 +44,10 @@ The system is designed around three goals:
 - Local launch: [docs/local/README.md](</Users/devin/Documents/GitHub/Chicago budget/docs/local/README.md>)
 - AWS launch: [docs/aws/README.md](</Users/devin/Documents/GitHub/Chicago budget/docs/aws/README.md>)
 
+## License
+
+This project is released under the MIT License. See [LICENSE](</Users/devin/Documents/GitHub/Chicago budget/LICENSE>).
+
 ## Runtime Notes
 
 - `POST /` redirects to canonical `GET /search?q=...` URLs for crawlable search pages.
