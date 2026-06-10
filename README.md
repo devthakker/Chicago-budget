@@ -37,6 +37,7 @@ The system is designed around three goals:
 - [docker-compose.yml](</Users/devin/Documents/GitHub/Chicago budget/docker-compose.yml>): containerized runtime configuration
 - [Dockerfile](</Users/devin/Documents/GitHub/Chicago budget/Dockerfile>): image build definition
 - [.env.openai.example](</Users/devin/Documents/GitHub/Chicago budget/.env.openai.example>): OpenAI-based runtime template
+- [.env.bedrock.example](</Users/devin/Documents/GitHub/Chicago budget/.env.bedrock.example>): Bedrock-based runtime template for Lightsail or other AWS hosts
 
 ## Documentation
 

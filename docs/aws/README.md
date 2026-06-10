@@ -1,36 +1,57 @@
 # AWS Launch
 
-This runbook is for fully launching the app publicly on AWS EC2, with DNS managed in Vercel.
+This runbook is for fully launching the app publicly on AWS Lightsail, with DNS managed in Vercel.
 
 ## Architecture
 
-- Compute: one EC2 instance
+- Compute: one Ubuntu Lightsail instance
 - App: Docker Compose
 - TLS and reverse proxy: Caddy
-- DNS: Vercel DNS pointing to an Elastic IP
+- DNS: Vercel DNS pointing to a Lightsail static IP
+- LLM provider: OpenAI or Bedrock
 
-## 1. Provision EC2
+## Recommended Size
 
-Create an Ubuntu 22.04 instance with at least:
+Start with:
 
-- `t3.large`
-- 30 GB storage
+- Lightsail Linux/Unix
+- `2 GB RAM / 2 vCPUs / 60 GB SSD`
 
-Open inbound rules:
+That is the practical low-cost starting point for this app. It leaves enough room for Docker, the local search index, and a public web process without pushing memory too hard.
 
-- `22` from your IP
-- `80` from the public internet
-- `443` from the public internet
+## 1. Provision Lightsail
 
-Allocate and attach an Elastic IP.
+In AWS Lightsail:
 
-SSH in:
+1. Create an instance.
+2. Choose:
+   - platform: Linux/Unix
+   - blueprint: Ubuntu 22.04 LTS
+   - plan: `2 GB RAM / 2 vCPUs / 60 GB SSD`
+3. Name the instance.
+4. Create it.
+
+Then attach a static IP to that instance from the Lightsail console.
+
+## 2. Open The Required Ports
+
+Lightsail uses instance firewalls. Open:
+
+- `22` for SSH
+- `80` for HTTP
+- `443` for HTTPS
+
+Prefer restricting `22` to your own IP range if possible.
+
+Reference: [Control instance traffic with firewalls in Lightsail](https://docs.aws.amazon.com/lightsail/latest/userguide/understanding-firewall-and-port-mappings-in-amazon-lightsail.html)
+
+## 3. SSH Into The Box
 
 ```bash
-ssh -i /path/to/key.pem ubuntu@<EC2_PUBLIC_IP>
+ssh -i /path/to/key.pem ubuntu@<LIGHTSAIL_STATIC_IP>
 ```
 
-## 2. Install Docker
+## 4. Install Docker
 
 Use Docker's official repo:
 
@@ -62,7 +83,7 @@ docker --version
 docker compose version
 ```
 
-## 3. Deploy The App
+## 5. Deploy The App
 
 Clone the repo:
 
@@ -71,7 +92,7 @@ git clone <YOUR_REPO_URL>
 cd "Chicago budget"
 ```
 
-## 4. Create Runtime Config
+## 6. Create Runtime Config
 
 ### Option A: OpenAI
 
@@ -90,46 +111,38 @@ SITE_DISABLED_REPO_URL=https://github.com/your-org/your-repo
 
 ### Option B: Bedrock
 
-Create `.env`:
+Lightsail does not give you the same straightforward EC2-instance-profile path most people use on EC2. For the simplest setup, configure AWS credentials explicitly on the server with `aws configure`, or export `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `.env`.
+
+Copy the template:
 
 ```bash
-cat > .env <<'ENV'
-PORT=8000
-FORCE_REINDEX=1
-
-LLM_PROVIDER=bedrock
-EMBEDDING_PROVIDER=bedrock
-AWS_REGION=us-east-1
-BEDROCK_CHAT_MODEL=anthropic.claude-3-5-sonnet-20241022-v2:0
-BEDROCK_EMBED_MODEL=amazon.titan-embed-text-v2:0
-
-RAG_BM25_WEIGHT=0.85
-RAG_VECTOR_WEIGHT=0.15
-RAG_RERANKER=auto
-RAG_SUPPRESS_TOC=true
-
-RATE_LIMIT_ENABLED=true
-RATE_LIMIT_MAX_REQUESTS=20
-RATE_LIMIT_WINDOW_SECONDS=60
-RATE_LIMIT_METHOD=POST
-RATE_LIMIT_PATH=/
-RATE_LIMIT_TRUST_PROXY=true
-
-SITE_ENABLED=true
-SITE_DISABLED_REPO_URL=https://github.com/your-org/your-repo
-ENV
+cp .env.bedrock.example .env
+nano .env
 ```
 
-## 5. Start The App
+Set at minimum:
 
-## 5. Verify Bedrock Before Launch
+```env
+AWS_ACCESS_KEY_ID=replace_with_your_access_key
+AWS_SECRET_ACCESS_KEY=replace_with_your_secret_key
+SITE_DISABLED_REPO_URL=https://github.com/your-org/your-repo
+```
+
+## 7. Verify Bedrock Before Launch
 
 Run this only if you are using Bedrock.
 
-First confirm the instance or shell can authenticate to AWS:
+First confirm the server can authenticate to AWS:
 
 ```bash
 aws sts get-caller-identity
+```
+
+If the `aws` CLI is not installed:
+
+```bash
+sudo apt update
+sudo apt install -y awscli
 ```
 
 Then verify Bedrock model access with a direct invocation:
@@ -169,11 +182,11 @@ If this succeeds, your AWS credentials, region, and Bedrock chat model access ar
 
 If it fails:
 
-- check that the EC2 instance role or AWS keys are present
+- check that `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are valid
 - confirm `AWS_REGION` matches the region where the model is enabled
 - confirm your AWS account has access to the configured `BEDROCK_CHAT_MODEL`
 
-## 6. Start The App
+## 8. Start The App
 
 ```bash
 docker compose --env-file .env up --build -d
@@ -197,7 +210,7 @@ Then restart:
 docker compose --env-file .env up -d
 ```
 
-## 7. Put Caddy In Front
+## 9. Put Caddy In Front
 
 Install Caddy:
 
@@ -226,19 +239,19 @@ sudo systemctl reload caddy
 sudo systemctl status caddy --no-pager
 ```
 
-## 8. Configure Vercel DNS
+## 10. Configure Vercel DNS
 
 If you want a root domain:
 
 - Type: `A`
 - Name: `@`
-- Value: `<YOUR_ELASTIC_IP>`
+- Value: `<YOUR_LIGHTSAIL_STATIC_IP>`
 
 If you want a subdomain like `budget.example.com`:
 
 - Type: `A`
 - Name: `budget`
-- Value: `<YOUR_ELASTIC_IP>`
+- Value: `<YOUR_LIGHTSAIL_STATIC_IP>`
 
 Optional `www`:
 
@@ -254,7 +267,7 @@ dig +short www.example.com
 dig +short budget.example.com
 ```
 
-## 9. Verify
+## 11. Verify
 
 From your local machine:
 
@@ -272,7 +285,7 @@ curl -sS https://example.com/robots.txt
 curl -sS https://example.com/sitemap.xml
 ```
 
-## 10. Operations
+## 12. Operations
 
 Update deployment:
 
@@ -282,7 +295,7 @@ git pull
 docker compose --env-file .env up --build -d
 ```
 
-Force one-time reindex after retrieval/index changes:
+Force one-time reindex after retrieval or embedding changes:
 
 ```bash
 nano .env
@@ -308,11 +321,12 @@ View logs:
 docker compose logs -f --tail=200
 ```
 
-## 11. Optional Ollama On AWS
+## 13. Optional Ollama On AWS
 
 If you want Ollama instead of OpenAI or Bedrock:
 
-- use a GPU instance
+- do not use the small Lightsail plan
+- use a larger box, ideally outside Lightsail if you need serious local inference
 - install Ollama on the host
 - pull the required models
 - point the container at a host-reachable Ollama URL
@@ -327,17 +341,24 @@ OLLAMA_CHAT_MODEL=llama3.2:latest
 OLLAMA_EMBED_MODEL=qwen3-embedding:4b
 ```
 
-## 12. Common Issues
+If cost is the priority, use Bedrock or OpenAI instead of Ollama on AWS.
+
+## 14. Common Issues
 
 - HTTPS not issuing:
-  - confirm ports `80` and `443` are open
-  - confirm Vercel DNS points to the Elastic IP
+  - confirm Lightsail ports `80` and `443` are open
+  - confirm Vercel DNS points to the Lightsail static IP
   - check `sudo journalctl -u caddy -n 200 --no-pager`
 
 - App not reachable:
   - `docker compose ps`
   - `docker compose logs --tail=200`
   - confirm Caddy points to `127.0.0.1:8000`
+
+- Bedrock authentication failing:
+  - verify `aws sts get-caller-identity`
+  - verify `AWS_REGION`
+  - verify the account has model access in Bedrock
 
 - Stale retrieval after config changes:
   - run one deploy with `FORCE_REINDEX=1`
