@@ -293,7 +293,15 @@ def _fund_url(slug: str) -> str:
 
 
 def _record_pdf_url(record: dict[str, Any]) -> str:
-    return f"/pdf/{record['source_file']}#page={record['page']}"
+    return f"/pdf/{record['source_file']}#page={record.get('page_start', record['page'])}"
+
+
+def _record_page_label(record: dict[str, Any]) -> str:
+    page_start = record.get("page_start", record["page"])
+    page_end = record.get("page_end", page_start)
+    if page_end > page_start:
+        return f"p.{page_start}-{page_end}"
+    return f"p.{page_start}"
 
 
 def _top_budget_links(limit: int = 8) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
@@ -852,7 +860,10 @@ async def explorer(
     records_view = []
     for record in records[:150]:
         record_copy = dict(record)
+        record_copy["page_start"] = record.get("page_start", record.get("page"))
+        record_copy["page_end"] = record.get("page_end", record_copy["page_start"])
         record_copy["pdf_url"] = _record_pdf_url(record)
+        record_copy["page_label"] = _record_page_label(record_copy)
         record_copy["department_href"] = _department_url(record["department_slug"])
         record_copy["fund_href"] = _fund_url(record["fund_slug"])
         records_view.append(record_copy)
@@ -902,7 +913,10 @@ async def department_detail(request: Request, slug: str) -> HTMLResponse:
     records_view = []
     for record in records[:20]:
         record_copy = dict(record)
+        record_copy["page_start"] = record.get("page_start", record.get("page"))
+        record_copy["page_end"] = record.get("page_end", record_copy["page_start"])
         record_copy["pdf_url"] = _record_pdf_url(record)
+        record_copy["page_label"] = _record_page_label(record_copy)
         record_copy["fund_href"] = _fund_url(record["fund_slug"])
         records_view.append(record_copy)
 
@@ -943,7 +957,10 @@ async def fund_detail(request: Request, slug: str) -> HTMLResponse:
     records_view = []
     for record in records[:20]:
         record_copy = dict(record)
+        record_copy["page_start"] = record.get("page_start", record.get("page"))
+        record_copy["page_end"] = record.get("page_end", record_copy["page_start"])
         record_copy["pdf_url"] = _record_pdf_url(record)
+        record_copy["page_label"] = _record_page_label(record_copy)
         record_copy["department_href"] = _department_url(record["department_slug"])
         records_view.append(record_copy)
 

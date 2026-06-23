@@ -10,7 +10,7 @@ from typing import Any
 from .engine import extract_pdf_pages, normalize_text
 
 
-DATASET_VERSION = 2
+DATASET_VERSION = 3
 DEPARTMENT_RE = re.compile(r"^(?P<code>\d{3})\s*-\s+(?P<name>.+)$")
 HEADER_CODE_RE = re.compile(r"^(?P<code>[0-9A-Z]{4})\s*-\s+(?P<name>.+)$")
 TUPLE_RE = re.compile(r"^\((?P<tuple>[0-9A-Z/]+)\)$")
@@ -26,6 +26,7 @@ class ParsedRecord:
     source_file: str
     document_type: str
     page: int
+    page_end: int
     department_code: str
     department_name: str
     department_slug: str
@@ -54,6 +55,7 @@ class ParsedRecord:
             "source_file": self.source_file,
             "document_type": self.document_type,
             "page": self.page,
+            "page_end": self.page_end,
             "department_code": self.department_code,
             "department_name": self.department_name,
             "department_slug": self.department_slug,
@@ -99,6 +101,7 @@ class StructuredBudgetDataset:
         records: list[dict[str, Any]] = []
         for pdf_path in pdf_paths:
             records.extend(_parse_pdf(pdf_path))
+        records = _canonicalize_record_entities(records)
 
         departments = _aggregate_entities(records, key="department_slug", code_key="department_code", name_key="department_name")
         funds = _aggregate_entities(records, key="fund_slug", code_key="fund_code", name_key="fund_name")
@@ -136,17 +139,49 @@ def _parse_pdf(pdf_path: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     document_type = "grants" if "grant" in pdf_path.name.lower() else "annual"
 
+    group_pages: list[tuple[int, str]] = []
+    group_identity: tuple[str, str, str, str | None] | None = None
+
     for page_num, page_text in enumerate(pages, start=1):
-        if "Appropriation Total" not in page_text:
+        header = _extract_page_header(page_text)
+        if header is None:
             continue
-        parsed = _parse_page(pdf_path.name, document_type, page_num, page_text)
+
+        identity = (
+            header["department_code"],
+            header["fund_code"],
+            header["office_code"],
+            header["program_code"],
+        )
+
+        if not group_pages:
+            group_pages = [(page_num, page_text)]
+            group_identity = identity
+        elif identity == group_identity:
+            group_pages.append((page_num, page_text))
+        else:
+            parsed = _parse_page_group(pdf_path.name, document_type, group_pages)
+            if parsed is not None:
+                records.append(parsed.as_dict())
+            group_pages = [(page_num, page_text)]
+            group_identity = identity
+
+        if "Appropriation Total" in page_text:
+            parsed = _parse_page_group(pdf_path.name, document_type, group_pages)
+            if parsed is not None:
+                records.append(parsed.as_dict())
+            group_pages = []
+            group_identity = None
+
+    if group_pages:
+        parsed = _parse_page_group(pdf_path.name, document_type, group_pages)
         if parsed is not None:
             records.append(parsed.as_dict())
 
     return records
 
 
-def _parse_page(source_file: str, document_type: str, page_num: int, page_text: str) -> ParsedRecord | None:
+def _extract_page_header(page_text: str) -> dict[str, Any] | None:
     normalized = normalize_text(page_text)
     raw_lines = [line.rstrip() for line in normalized.splitlines()]
     lines = [line.strip() for line in raw_lines if line.strip()]
@@ -176,27 +211,68 @@ def _parse_page(source_file: str, document_type: str, page_num: int, page_text: 
     office_code, office_name = headers[1]
     program_code = headers[2][0] if len(headers) >= 3 else None
     program_name = headers[2][1] if len(headers) >= 3 else None
+    department_code, department_name = dept
 
-    appropriation_start = next((i for i, line in enumerate(lines) if line.lower().startswith("appropriations")), None)
-    if appropriation_start is None:
+    return {
+        "department_code": department_code,
+        "department_name": department_name,
+        "fund_code": fund_code,
+        "fund_name": fund_name,
+        "office_code": office_code,
+        "office_name": office_name,
+        "program_code": program_code,
+        "program_name": program_name,
+        "tuple_code": tuple_code,
+    }
+
+
+def _parse_page_group(source_file: str, document_type: str, page_entries: list[tuple[int, str]]) -> ParsedRecord | None:
+    if not page_entries:
+        return None
+
+    header = _extract_page_header(page_entries[0][1])
+    if header is None:
         return None
 
     body_lines: list[str] = []
-    for line in lines[appropriation_start + 1 :]:
-        lowered = line.lower()
-        if lowered.startswith("positions and salaries") or lowered.startswith("annual appropriation ordinance"):
-            break
-        body_lines.append(line)
+    page_start = page_entries[0][0]
+    page_end = page_entries[-1][0]
+
+    for _, page_text in page_entries:
+        normalized = normalize_text(page_text)
+        raw_lines = [line.rstrip() for line in normalized.splitlines()]
+        lines = [line.strip() for line in raw_lines if line.strip()]
+        appropriation_start = next((i for i, line in enumerate(lines) if line.lower().startswith("appropriations")), None)
+        if appropriation_start is None:
+            continue
+        for line in lines[appropriation_start + 1 :]:
+            lowered = line.lower()
+            if lowered.startswith("positions and salaries") or lowered.startswith("annual appropriation ordinance") or lowered.startswith("grant details ordinance"):
+                break
+            body_lines.append(line)
 
     line_items, section_totals, appropriation_total, fund_total, department_total = _parse_appropriation_body(body_lines)
     if appropriation_total is None:
         return None
 
-    department_code, department_name = dept
+    department_code = header["department_code"]
+    department_name = header["department_name"]
+    fund_code = header["fund_code"]
+    fund_name = header["fund_name"]
+    office_code = header["office_code"]
+    office_name = header["office_name"]
+    program_code = header["program_code"]
+    program_name = header["program_name"]
+    tuple_code = header["tuple_code"]
+
     department_slug = slugify(f"{department_code}-{department_name}")
     fund_slug = slugify(f"{fund_code}-{fund_name}")
-    office_slug = slugify(f"{office_code}-{office_name}")
-    program_slug = slugify(f"{program_code}-{program_name}") if program_code and program_name else None
+    office_slug = slugify(f"{department_code}-{office_code}-{office_name}")
+    program_slug = (
+        slugify(f"{department_code}-{fund_code}-{office_code}-{program_code}-{program_name}")
+        if program_code and program_name
+        else None
+    )
 
     search_bits = [
         department_code,
@@ -212,14 +288,15 @@ def _parse_page(source_file: str, document_type: str, page_num: int, page_text: 
     slug_parts = [department_code, fund_code, office_code]
     if program_code:
         slug_parts.append(program_code)
-    slug_parts.append(str(page_num))
+    slug_parts.append(str(page_start))
 
     return ParsedRecord(
-        record_id=f"{source_file}:{page_num}:{'-'.join(slug_parts)}",
+        record_id=f"{source_file}:{page_start}:{'-'.join(slug_parts)}",
         slug=slugify("-".join(slug_parts)),
         source_file=source_file,
         document_type=document_type,
-        page=page_num,
+        page=page_start,
+        page_end=page_end,
         department_code=department_code,
         department_name=department_name,
         department_slug=department_slug,
@@ -325,6 +402,70 @@ def _parse_appropriation_body(lines: list[str]) -> tuple[list[dict[str, Any]], l
     return line_items, section_totals, appropriation_total, fund_total, department_total
 
 
+def _canonicalize_record_entities(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    department_names = _choose_canonical_names(records, lambda record: (record["department_code"],), "department_name")
+    fund_names = _choose_canonical_names(records, lambda record: (record["fund_code"],), "fund_name")
+    office_names = _choose_canonical_names(records, lambda record: (record["department_code"], record["office_code"]), "office_name")
+    program_names = _choose_canonical_names(
+        records,
+        lambda record: (record["department_code"], record["fund_code"], record["office_code"], record.get("program_code")),
+        "program_name",
+    )
+
+    for record in records:
+        record["department_name"] = department_names[(record["department_code"],)]
+        record["fund_name"] = fund_names[(record["fund_code"],)]
+        record["office_name"] = office_names[(record["department_code"], record["office_code"])]
+        record["department_slug"] = slugify(f"{record['department_code']}-{record['department_name']}")
+        record["fund_slug"] = slugify(f"{record['fund_code']}-{record['fund_name']}")
+        record["office_slug"] = slugify(f"{record['department_code']}-{record['office_code']}-{record['office_name']}")
+
+        if record.get("program_code"):
+            program_key = (
+                record["department_code"],
+                record["fund_code"],
+                record["office_code"],
+                record.get("program_code"),
+            )
+            program_name = program_names.get(program_key) or record.get("program_name")
+            record["program_name"] = program_name
+            if program_name:
+                record["program_slug"] = slugify(
+                    f"{record['department_code']}-{record['fund_code']}-{record['office_code']}-{record['program_code']}-{program_name}"
+                )
+
+    return records
+
+
+def _choose_canonical_names(
+    records: list[dict[str, Any]],
+    key_fn,
+    field_name: str,
+) -> dict[tuple[Any, ...], str]:
+    variants: dict[tuple[Any, ...], dict[str, tuple[int, int]]] = defaultdict(dict)
+
+    for record in records:
+        value = record.get(field_name)
+        if not value:
+            continue
+        key = key_fn(record)
+        count, total = variants[key].get(value, (0, 0))
+        variants[key][value] = (count + 1, total + int(record.get("appropriation_total", 0)))
+
+    canonical: dict[tuple[Any, ...], str] = {}
+    for key, names in variants.items():
+        canonical[key] = max(
+            names.items(),
+            key=lambda item: (
+                any(char.islower() for char in item[0]),
+                item[1][0],
+                item[1][1],
+                -len(item[0]),
+            ),
+        )[0]
+    return canonical
+
+
 def _build_metadata(pdf_paths: list[Path], records: list[dict[str, Any]]) -> dict[str, Any]:
     by_document: dict[str, int] = defaultdict(int)
     for record in records:
@@ -381,7 +522,13 @@ def _aggregate_entities(records: list[dict[str, Any]], key: str, code_key: str, 
         entry["appropriation_total"] += int(record["appropriation_total"])
         entry["documents"].add(record["document_type"])
         entry["record_count"] += 1
-        entry["pages"].append({"source_file": record["source_file"], "page": record["page"]})
+        entry["pages"].append(
+            {
+                "source_file": record["source_file"],
+                "page_start": record["page"],
+                "page_end": record.get("page_end", record["page"]),
+            }
+        )
         if record.get("program_name") and len(entry["sample_programs"]) < 8:
             entry["sample_programs"].append(record["program_name"])
 
@@ -416,14 +563,16 @@ def _aggregate_programs(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _amount_from_line(line: str) -> int | None:
-    match = NUMERIC_RE.search(line.replace("$", "").strip())
+    match = re.search(r"(\(?\$?\d[\d,]*\)?)\s*$", line.strip())
     if not match:
         return None
-    digits = match.group(1).replace(",", "")
+    token = match.group(1).strip()
+    negative = token.startswith("(") and token.endswith(")")
+    digits = token.replace("(", "").replace(")", "").replace("$", "").replace(",", "")
     if not digits.isdigit():
         return None
     value = int(digits)
-    if "(" in line and ")" in line:
+    if negative:
         return -value
     return value
 
