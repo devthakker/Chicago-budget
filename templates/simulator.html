@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title }}</title>
+    <meta name="description" content="{{ meta_description }}" />
+    <meta name="robots" content="{{ robots_value }}" />
+    <link rel="canonical" href="{{ canonical_url }}" />
+    <meta property="og:title" content="{{ page_title }}" />
+    <meta property="og:description" content="{{ meta_description }}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{{ canonical_url }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/icon.png" type="image/png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <meta property="og:image" content="{{ base_url }}/icon.png" />
+    <meta name="twitter:image" content="{{ base_url }}/icon.png" />
+    <script type="application/ld+json">{{ json_ld | safe }}</script>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">Scenario Tool</p>
+        <h1>Chicago Budget Simulator</h1>
+        <p class="sub">Test department-level budget changes, watch the net delta update instantly, and share a scenario URL.</p>
+        <div class="mini-links">
+          <a href="/">Search</a>
+          <a href="/explorer">Explorer</a>
+          <a href="/guides">Guides</a>
+        </div>
+      </header>
+
+      <section class="stat-grid">
+        <article class="card stat-card">
+          <span class="stat-label">Departments in simulator</span>
+          <strong class="stat-value">{{ departments|length }}</strong>
+        </article>
+        <article class="card stat-card">
+          <span class="stat-label">Baseline modeled total</span>
+          <strong class="stat-value">{{ baseline_total|currency }}</strong>
+        </article>
+        <article class="card stat-card">
+          <span class="stat-label">Shareable</span>
+          <strong class="stat-value stat-text">Every adjustment is encoded into the URL.</strong>
+        </article>
+        <article class="card stat-card">
+          <span class="stat-label">Data source</span>
+          <strong class="stat-value stat-text">Structured FY2026 appropriation records.</strong>
+        </article>
+      </section>
+
+      <section class="results-layout explorer-layout">
+        <section class="card">
+          <div class="section-head">
+            <h2>Adjust Department Budgets</h2>
+            <div class="mini-links">
+              <button type="button" id="resetScenario" class="ghost-button">Reset</button>
+              <button type="button" id="copyScenario" class="ghost-button">Copy Share Link</button>
+            </div>
+          </div>
+          <div class="simulator-controls" id="simulatorControls">
+            {% for dept in departments %}
+            <div class="sim-row" data-department="{{ dept.slug }}">
+              <div class="sim-row-head">
+                <div>
+                  <div class="table-primary">{{ dept.code }} · {{ dept.name }}</div>
+                  <div class="table-secondary">Baseline {{ dept.amount|currency }}</div>
+                </div>
+                <a href="{{ dept.href }}">Open detail</a>
+              </div>
+              <div class="sim-row-inputs">
+                <input type="range" min="-50000000" max="50000000" step="500000" value="0" data-role="range" />
+                <input type="number" step="500000" value="0" data-role="number" />
+              </div>
+              <div class="sim-row-foot">
+                <span class="muted-note">Adjustment</span>
+                <strong data-role="delta">$0</strong>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </section>
+
+        <aside class="stack">
+          <section class="card">
+            <h2>Scenario Summary</h2>
+            <dl class="summary-grid">
+              <div>
+                <dt>Baseline total</dt>
+                <dd id="baselineTotal">{{ baseline_total|currency }}</dd>
+              </div>
+              <div>
+                <dt>Net change</dt>
+                <dd id="netDelta">$0</dd>
+              </div>
+              <div>
+                <dt>Scenario total</dt>
+                <dd id="scenarioTotal">{{ baseline_total|currency }}</dd>
+              </div>
+            </dl>
+          </section>
+          <section class="card">
+            <h2>Largest Changes</h2>
+            <ul class="compact-list" id="largestChanges">
+              <li><span>No changes yet.</span><span>$0</span></li>
+            </ul>
+          </section>
+          <section class="card">
+            <h2>How to Use It</h2>
+            <ul class="compact-list prose-list">
+              {% for item in faq_items %}
+              <li>
+                <div class="table-primary">{{ item.question }}</div>
+                <div class="table-secondary">{{ item.answer }}</div>
+              </li>
+              {% endfor %}
+            </ul>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <script>
+      (() => {
+        const analyticsPayload = {{ analytics_payload | safe }};
+        const payload = JSON.stringify({ event: "pageview", ...analyticsPayload });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/analytics/event", payload);
+        } else {
+          fetch("/analytics/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            keepalive: true
+          }).catch(() => {});
+        }
+
+        const data = {{ simulator_payload | safe }};
+        const currency = (value) => {
+          const sign = value < 0 ? "-" : "";
+          return `${sign}$${Math.abs(value).toLocaleString()}`;
+        };
+
+        const url = new URL(window.location.href);
+        const rows = Array.from(document.querySelectorAll(".sim-row"));
+        const netDeltaEl = document.getElementById("netDelta");
+        const scenarioTotalEl = document.getElementById("scenarioTotal");
+        const largestChangesEl = document.getElementById("largestChanges");
+        const copyScenarioBtn = document.getElementById("copyScenario");
+        const resetScenarioBtn = document.getElementById("resetScenario");
+
+        const syncRow = (row, value) => {
+          row.querySelector('[data-role="range"]').value = value;
+          row.querySelector('[data-role="number"]').value = value;
+          row.querySelector('[data-role="delta"]').textContent = currency(Number(value));
+        };
+
+        const readDelta = (row) => Number(row.querySelector('[data-role="number"]').value || 0);
+
+        const updateUrl = () => {
+          const nextUrl = new URL(window.location.href);
+          rows.forEach((row) => {
+            const slug = row.dataset.department;
+            const delta = readDelta(row);
+            if (delta) {
+              nextUrl.searchParams.set(`adj_${slug}`, String(delta));
+            } else {
+              nextUrl.searchParams.delete(`adj_${slug}`);
+            }
+          });
+          window.history.replaceState({}, "", nextUrl.toString());
+        };
+
+        const renderSummary = () => {
+          let netDelta = 0;
+          const changed = [];
+          rows.forEach((row) => {
+            const slug = row.dataset.department;
+            const delta = readDelta(row);
+            netDelta += delta;
+            if (delta !== 0) {
+              const dept = data.departments.find((item) => item.slug === slug);
+              changed.push({ name: dept.name, delta });
+            }
+          });
+
+          netDeltaEl.textContent = currency(netDelta);
+          scenarioTotalEl.textContent = currency(data.baseline_total + netDelta);
+
+          changed.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+          if (!changed.length) {
+            largestChangesEl.innerHTML = '<li><span>No changes yet.</span><span>$0</span></li>';
+          } else {
+            largestChangesEl.innerHTML = changed.slice(0, 6).map((item) => (
+              `<li><span>${item.name}</span><span>${currency(item.delta)}</span></li>`
+            )).join("");
+          }
+        };
+
+        rows.forEach((row) => {
+          const slug = row.dataset.department;
+          const initial = Number(url.searchParams.get(`adj_${slug}`) || 0);
+          syncRow(row, initial);
+
+          const onInput = (event) => {
+            syncRow(row, event.target.value);
+            renderSummary();
+            updateUrl();
+          };
+
+          row.querySelector('[data-role="range"]').addEventListener("input", onInput);
+          row.querySelector('[data-role="number"]').addEventListener("input", onInput);
+        });
+
+        copyScenarioBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(window.location.href);
+            copyScenarioBtn.textContent = "Copied";
+            setTimeout(() => { copyScenarioBtn.textContent = "Copy Share Link"; }, 1500);
+          } catch (_) {}
+        });
+
+        resetScenarioBtn.addEventListener("click", () => {
+          rows.forEach((row) => syncRow(row, 0));
+          renderSummary();
+          updateUrl();
+        });
+
+        renderSummary();
+      })();
+    </script>
+  </body>
+</html>

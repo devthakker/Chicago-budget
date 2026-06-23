@@ -16,6 +16,8 @@ The system is designed around three goals:
 - optionally reranks results with a cross-encoder
 - generates cited answers using OpenAI, Bedrock, or Ollama
 - lets users open exact source pages in a built-in viewer
+- normalizes appropriation records into a structured explorer dataset
+- exposes SEO-friendly department pages, fund pages, and a budget simulator
 - supports exporting answers to Markdown, JSON, and CSV
 - includes evaluation tooling and tuning scripts for retrieval quality
 
@@ -31,8 +33,10 @@ The system is designed around three goals:
 - [templates/](</Users/devin/Documents/GitHub/Chicago budget/templates>): HTML templates for search, guides, disabled page, and rate-limit page
 - [static/styles.css](</Users/devin/Documents/GitHub/Chicago budget/static/styles.css>): shared styling for the web UI
 - [build_index.py](</Users/devin/Documents/GitHub/Chicago budget/build_index.py>): offline index build entrypoint
+- [build_structured_budget.py](</Users/devin/Documents/GitHub/Chicago budget/build_structured_budget.py>): offline structured dataset build entrypoint
 - [query_rag.py](</Users/devin/Documents/GitHub/Chicago budget/query_rag.py>): CLI query tool
 - [eval_rag.py](</Users/devin/Documents/GitHub/Chicago budget/eval_rag.py>): retrieval evaluation and tuning harness
+- [src/chicago_budget_rag/structured_budget.py](</Users/devin/Documents/GitHub/Chicago budget/src/chicago_budget_rag/structured_budget.py>): parser and aggregator for explorer/simulator data
 - [eval/questions.sample.json](</Users/devin/Documents/GitHub/Chicago budget/eval/questions.sample.json>): starter benchmark set
 - [docker-compose.yml](</Users/devin/Documents/GitHub/Chicago budget/docker-compose.yml>): containerized runtime configuration
 - [Dockerfile](</Users/devin/Documents/GitHub/Chicago budget/Dockerfile>): image build definition
@@ -52,6 +56,7 @@ This project is released under the MIT License. See [LICENSE](</Users/devin/Docu
 
 - `POST /` redirects to canonical `GET /search?q=...` URLs for crawlable search pages.
 - Curated search pages and guide pages are indexable; arbitrary search pages are `noindex,follow`.
+- `/explorer`, `/simulator`, `/departments/*`, and `/funds/*` add structured, crawlable surfaces beyond the RAG query UI.
 - `robots.txt` and `sitemap.xml` are served by the app.
 - The public site can be disabled with `SITE_ENABLED=false` while keeping health checks alive.
 - Query export is available through the UI and `GET /export`.

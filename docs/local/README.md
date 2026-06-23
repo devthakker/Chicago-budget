@@ -98,6 +98,7 @@ Default chunking is already tuned:
 
 ```bash
 python3 build_index.py --pdf-dir . --index-dir data/index
+python3 build_structured_budget.py
 ```
 
 If you change embedding provider or embedding model, rebuild the index.

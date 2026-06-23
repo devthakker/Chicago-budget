@@ -2,5 +2,8 @@
 __pycache__
 *.pyc
 data/index
+data/structured
 .git
 .gitignore
+.env
+.env.local

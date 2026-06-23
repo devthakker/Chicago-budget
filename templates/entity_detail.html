@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title }}</title>
+    <meta name="description" content="{{ meta_description }}" />
+    <meta name="robots" content="{{ robots_value }}" />
+    <link rel="canonical" href="{{ canonical_url }}" />
+    <meta property="og:title" content="{{ page_title }}" />
+    <meta property="og:description" content="{{ meta_description }}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="{{ canonical_url }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/icon.png" type="image/png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <meta property="og:image" content="{{ base_url }}/icon.png" />
+    <meta name="twitter:image" content="{{ base_url }}/icon.png" />
+    <script type="application/ld+json">{{ json_ld | safe }}</script>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">{{ entity_type|title }} Detail</p>
+        <h1>{{ entity.code }} · {{ entity.name }}</h1>
+        <p class="sub">Structured FY2026 appropriation totals, line items, and direct page links for this {{ entity_type }}.</p>
+        <div class="mini-links">
+          <a href="/">Search</a>
+          <a href="/explorer">Explorer</a>
+          <a href="{{ search_href }}">Run related search</a>
+        </div>
+      </header>
+
+      <section class="stat-grid">
+        <article class="card stat-card">
+          <span class="stat-label">Appropriation total</span>
+          <strong class="stat-value">{{ entity.appropriation_total|currency }}</strong>
+        </article>
+        <article class="card stat-card">
+          <span class="stat-label">Records parsed</span>
+          <strong class="stat-value">{{ entity.record_count }}</strong>
+        </article>
+        <article class="card stat-card">
+          <span class="stat-label">Documents represented</span>
+          <strong class="stat-value stat-text">{{ entity.documents|join(', ') }}</strong>
+        </article>
+        <article class="card stat-card">
+          <span class="stat-label">Open filtered explorer</span>
+          <strong class="stat-value stat-text"><a href="{{ explorer_href }}">View explorer slice</a></strong>
+        </article>
+      </section>
+
+      <section class="results-layout explorer-layout">
+        <section class="stack">
+          <section class="card">
+            <h2>{{ breakdown_title }}</h2>
+            <ul class="compact-list">
+              {% for item in breakdown_items %}
+              <li>
+                <a href="{{ item.href }}">{{ item.code }} · {{ item.name }}</a>
+                <span>{{ item.appropriation_total|compact_currency }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+          </section>
+          <section class="card">
+            <h2>Largest Line Items</h2>
+            <ul class="compact-list">
+              {% for item in top_line_items %}
+              <li>
+                <div>
+                  <div class="table-primary">{{ item.line_code }} · {{ item.label }}</div>
+                  <div class="table-secondary">{{ item.section_name }}</div>
+                </div>
+                <span>{{ item.amount|compact_currency }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+          </section>
+        </section>
+
+        <section class="card">
+          <div class="section-head">
+            <h2>Source Records</h2>
+            <span class="muted-note">Showing up to 20 of {{ records_total_count }}</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fund / Department</th>
+                  <th>Program / Office</th>
+                  <th>Total</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for record in records %}
+                <tr>
+                  <td>
+                    {% if entity_type == 'department' %}
+                    <a href="{{ record.fund_href }}">{{ record.fund_code }} · {{ record.fund_name }}</a>
+                    {% else %}
+                    <a href="{{ record.department_href }}">{{ record.department_code }} · {{ record.department_name }}</a>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="table-primary">{{ record.program_name or record.office_name }}</div>
+                    <div class="table-secondary">{{ record.document_type|title }} ordinance</div>
+                  </td>
+                  <td>{{ record.appropriation_total|currency }}</td>
+                  <td><a href="{{ record.pdf_url }}" target="_blank" rel="noopener noreferrer">{{ record.source_file }} p.{{ record.page }}</a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script>
+      (() => {
+        const analyticsPayload = {{ analytics_payload | safe }};
+        const payload = JSON.stringify({ event: "pageview", ...analyticsPayload });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/analytics/event", payload);
+          return;
+        }
+        fetch("/analytics/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+      })();
+    </script>
+  </body>
+</html>

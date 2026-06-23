@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title }}</title>
+    <meta name="description" content="{{ meta_description }}" />
+    <meta name="robots" content="{{ robots_value }}" />
+    <link rel="canonical" href="{{ canonical_url }}" />
+    <meta property="og:title" content="{{ page_title }}" />
+    <meta property="og:description" content="{{ meta_description }}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{{ canonical_url }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/icon.png" type="image/png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <meta property="og:image" content="{{ base_url }}/icon.png" />
+    <meta name="twitter:image" content="{{ base_url }}/icon.png" />
+    <script type="application/ld+json">{{ json_ld | safe }}</script>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">Structured Budget Data</p>
+        <h1>Chicago Budget Explorer</h1>
+        <p class="sub">Browse appropriation records by department, fund, document, and keyword, with direct source-page links back to the PDFs.</p>
+        <div class="mini-links">
+          <a href="/">Search</a>
+          <a href="/simulator">Simulator</a>
+          <a href="/guides">Guides</a>
+        </div>
+      </header>
+
+      <section class="card">
+        <form method="get" action="/explorer" class="filters-grid">
+          <div>
+            <label for="q">Keyword</label>
+            <input id="q" name="q" type="text" value="{{ query }}" placeholder="ARPA, Mayor, disaster recovery..." />
+          </div>
+          <div>
+            <label for="department">Department</label>
+            <select id="department" name="department">
+              <option value="">All departments</option>
+              {% for item in department_options %}
+              <option value="{{ item.slug }}" {% if department == item.slug %}selected{% endif %}>{{ item.code }} · {{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label for="fund">Fund</label>
+            <select id="fund" name="fund">
+              <option value="">All funds</option>
+              {% for item in fund_options %}
+              <option value="{{ item.slug }}" {% if fund == item.slug %}selected{% endif %}>{{ item.code }} · {{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label for="document_type">Document</label>
+            <select id="document_type" name="document_type">
+              <option value="">Both ordinances</option>
+              <option value="annual" {% if document_type == 'annual' %}selected{% endif %}>Annual appropriation</option>
+              <option value="grants" {% if document_type == 'grants' %}selected{% endif %}>Grant details</option>
+            </select>
+          </div>
+          <div>
+            <label for="sort">Sort</label>
+            <select id="sort" name="sort">
+              <option value="appropriation" {% if sort == 'appropriation' %}selected{% endif %}>Largest appropriation</option>
+              <option value="department" {% if sort == 'department' %}selected{% endif %}>Department</option>
+              <option value="fund" {% if sort == 'fund' %}selected{% endif %}>Fund</option>
+              <option value="page" {% if sort == 'page' %}selected{% endif %}>Source page</option>
+            </select>
+          </div>
+          <div class="filter-actions">
+            <button type="submit">Apply Filters</button>
+            <a href="/explorer" class="text-link">Reset</a>
+          </div>
+        </form>
+      </section>
+
+      <section class="stat-grid">
+        <article class="card stat-card">
+          <span class="stat-label">Matching records</span>
+          <strong class="stat-value">{{ record_count }}</strong>
+        </article>
+        <article class="card stat-card">
+          <span class="stat-label">Appropriation total shown</span>
+          <strong class="stat-value">{{ total_amount|currency }}</strong>
+        </article>
+        <article class="card stat-card">
+          <span class="stat-label">Primary department filter</span>
+          <strong class="stat-value stat-text">{{ department_obj.name if department_obj else 'All departments' }}</strong>
+        </article>
+        <article class="card stat-card">
+          <span class="stat-label">Primary fund filter</span>
+          <strong class="stat-value stat-text">{{ fund_obj.name if fund_obj else 'All funds' }}</strong>
+        </article>
+      </section>
+
+      <section class="results-layout explorer-layout">
+        <section class="card">
+          <div class="section-head">
+            <h2>Appropriation Records</h2>
+            <span class="muted-note">Showing up to 150 records</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Department</th>
+                  <th>Fund</th>
+                  <th>Program / Office</th>
+                  <th>Total</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for record in records %}
+                <tr>
+                  <td>
+                    <a href="{{ record.department_href }}">{{ record.department_code }} · {{ record.department_name }}</a>
+                  </td>
+                  <td>
+                    <a href="{{ record.fund_href }}">{{ record.fund_code }} · {{ record.fund_name }}</a>
+                  </td>
+                  <td>
+                    <div class="table-primary">{{ record.program_name or record.office_name }}</div>
+                    <div class="table-secondary">{{ record.document_type|title }} ordinance</div>
+                  </td>
+                  <td>{{ record.appropriation_total|currency }}</td>
+                  <td><a href="{{ record.pdf_url }}" target="_blank" rel="noopener noreferrer">{{ record.source_file }} p.{{ record.page }}</a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="stack">
+          <section class="card">
+            <h2>Top Departments In View</h2>
+            <ul class="compact-list">
+              {% for item in top_departments %}
+              <li>
+                <a href="{{ item.href }}">{{ item.code }} · {{ item.name }}</a>
+                <span>{{ item.appropriation_total|compact_currency }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+          </section>
+          <section class="card">
+            <h2>Top Funds In View</h2>
+            <ul class="compact-list">
+              {% for item in top_funds %}
+              <li>
+                <a href="{{ item.href }}">{{ item.code }} · {{ item.name }}</a>
+                <span>{{ item.appropriation_total|compact_currency }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <script>
+      (() => {
+        const analyticsPayload = {{ analytics_payload | safe }};
+        const payload = JSON.stringify({ event: "pageview", ...analyticsPayload });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/analytics/event", payload);
+          return;
+        }
+        fetch("/analytics/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+      })();
+    </script>
+  </body>
+</html>

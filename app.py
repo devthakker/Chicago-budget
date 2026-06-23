@@ -13,6 +13,7 @@ import html
 from collections import defaultdict, deque
 from pathlib import Path
 import sys
+from typing import Any
 from urllib.parse import quote_plus
 
 from fastapi import FastAPI, Form, Request, HTTPException, Query
@@ -24,10 +25,12 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from chicago_budget_rag.engine import RAGEngine
+from chicago_budget_rag.structured_budget import StructuredBudgetDataset
 
 app = FastAPI(title="Chicago Budget RAG")
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 engine = RAGEngine(ROOT / "data/index")
+budget_dataset = StructuredBudgetDataset(ROOT)
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 PDF_FILES = {p.name: p for p in ROOT.glob("*.pdf")}
 FAVICON_FILE = ROOT / "static" / "favicon.ico"
@@ -137,6 +140,28 @@ _rate_limit_store: dict[str, deque[float]] = defaultdict(deque)
 _rate_limit_lock = threading.Lock()
 
 
+def _currency(value: int | float | None) -> str:
+    value = 0 if value is None else value
+    return f"${value:,.0f}"
+
+
+def _compact_currency(value: int | float | None) -> str:
+    value = 0 if value is None else float(value)
+    sign = "-" if value < 0 else ""
+    value = abs(value)
+    if value >= 1_000_000_000:
+        return f"{sign}${value / 1_000_000_000:.1f}B"
+    if value >= 1_000_000:
+        return f"{sign}${value / 1_000_000:.1f}M"
+    if value >= 1_000:
+        return f"{sign}${value / 1_000:.0f}K"
+    return f"{sign}${value:,.0f}"
+
+
+templates.env.filters["currency"] = _currency
+templates.env.filters["compact_currency"] = _compact_currency
+
+
 def _client_ip(request: Request) -> str:
     if _RATE_LIMIT_TRUST_PROXY:
         forwarded = request.headers.get("x-forwarded-for", "").strip()
@@ -199,6 +224,198 @@ def _guide_links() -> list[dict[str, str]]:
         }
         for guide in GUIDES
     ]
+
+
+def _load_budget_data() -> dict[str, Any]:
+    return budget_dataset.load()
+
+
+def _department_url(slug: str) -> str:
+    return f"/departments/{slug}"
+
+
+def _fund_url(slug: str) -> str:
+    return f"/funds/{slug}"
+
+
+def _record_pdf_url(record: dict[str, Any]) -> str:
+    return f"/pdf/{record['source_file']}#page={record['page']}"
+
+
+def _top_budget_links(limit: int = 8) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    data = _load_budget_data()
+    departments = [
+        {
+            "name": item["name"],
+            "code": item["code"],
+            "href": _department_url(item["slug"]),
+            "amount": item["appropriation_total"],
+        }
+        for item in data["departments"][:limit]
+    ]
+    funds = [
+        {
+            "name": item["name"],
+            "code": item["code"],
+            "href": _fund_url(item["slug"]),
+            "amount": item["appropriation_total"],
+        }
+        for item in data["funds"][:limit]
+    ]
+    return departments, funds
+
+
+def _tool_links() -> list[dict[str, str]]:
+    return [
+        {
+            "title": "Budget Explorer",
+            "href": "/explorer",
+            "description": "Browse appropriations by department, fund, document, and keyword with direct PDF page links.",
+        },
+        {
+            "title": "Budget Simulator",
+            "href": "/simulator",
+            "description": "Adjust department budgets, compare the net delta, and share a scenario URL.",
+        },
+    ]
+
+
+def _sort_records(records: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
+    if sort == "department":
+        return sorted(records, key=lambda r: (r["department_name"], -r["appropriation_total"], r["fund_name"]))
+    if sort == "fund":
+        return sorted(records, key=lambda r: (r["fund_name"], -r["appropriation_total"], r["department_name"]))
+    if sort == "page":
+        return sorted(records, key=lambda r: (r["source_file"], r["page"]))
+    return sorted(records, key=lambda r: r["appropriation_total"], reverse=True)
+
+
+def _filter_records(
+    *,
+    query: str = "",
+    department: str = "",
+    fund: str = "",
+    document_type: str = "",
+    sort: str = "appropriation",
+) -> list[dict[str, Any]]:
+    data = _load_budget_data()
+    records = data["records"]
+    query_norm = query.strip().lower()
+
+    filtered = []
+    for record in records:
+        if department and record["department_slug"] != department:
+            continue
+        if fund and record["fund_slug"] != fund:
+            continue
+        if document_type and record["document_type"] != document_type:
+            continue
+        if query_norm:
+            haystack = f"{record['searchable_text']} {' '.join(item['label'] for item in record['line_items'])}".lower()
+            if query_norm not in haystack:
+                continue
+        filtered.append(record)
+
+    return _sort_records(filtered, sort)
+
+
+def _aggregate_for_records(records: list[dict[str, Any]], slug_key: str, code_key: str, name_key: str, href_fn) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for record in records:
+        slug = record[slug_key]
+        entry = grouped.setdefault(
+            slug,
+            {
+                "slug": slug,
+                "code": record[code_key],
+                "name": record[name_key],
+                "appropriation_total": 0,
+                "record_count": 0,
+                "href": href_fn(slug),
+            },
+        )
+        entry["appropriation_total"] += int(record["appropriation_total"])
+        entry["record_count"] += 1
+    return sorted(grouped.values(), key=lambda item: item["appropriation_total"], reverse=True)
+
+
+def _aggregate_line_items(records: list[dict[str, Any]], limit: int = 12) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for record in records:
+        for item in record.get("line_items", []):
+            key = (item.get("line_code") or "", item.get("label") or "")
+            entry = grouped.setdefault(
+                key,
+                {
+                    "section_name": item.get("section_name"),
+                    "line_code": item.get("line_code"),
+                    "label": item.get("label"),
+                    "amount": 0,
+                    "count": 0,
+                },
+            )
+            entry["amount"] += int(item.get("amount") or 0)
+            entry["count"] += 1
+    return sorted(grouped.values(), key=lambda item: item["amount"], reverse=True)[:limit]
+
+
+def _simulator_departments(limit: int = 10) -> list[dict[str, Any]]:
+    data = _load_budget_data()
+    departments = []
+    for item in data["departments"][:limit]:
+        departments.append(
+            {
+                "slug": item["slug"],
+                "code": item["code"],
+                "name": item["name"],
+                "amount": item["appropriation_total"],
+                "href": _department_url(item["slug"]),
+            }
+        )
+    return departments
+
+
+def _json_ld_for_explorer(query: str, department: str, fund: str) -> str:
+    title_bits = ["Chicago Budget Explorer"]
+    if department:
+        title_bits.append(department)
+    if fund:
+        title_bits.append(fund)
+    if query:
+        title_bits.append(query)
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "name": "Chicago FY2026 Budget Explorer",
+        "description": "Structured appropriations extracted from the Chicago FY2026 annual appropriation and grant ordinances.",
+        "url": _absolute_url("/explorer"),
+        "keywords": ["Chicago budget", "appropriations", "grants", "departments", "funds"],
+    }
+    return json.dumps(payload)
+
+
+def _json_ld_for_budget_entity(entity_type: str, entity: dict[str, Any], path: str) -> str:
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "name": f"{entity['name']} | {SITE_NAME}",
+        "description": f"Structured Chicago FY2026 budget entries for {entity['name']}.",
+        "url": _absolute_url(path),
+        "keywords": [entity["name"], entity["code"], "Chicago budget"],
+    }
+    return json.dumps(payload)
+
+
+def _json_ld_for_simulator() -> str:
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Chicago Budget Simulator",
+        "applicationCategory": "FinanceApplication",
+        "url": _absolute_url("/simulator"),
+        "description": "Adjust department-level Chicago budget scenarios and compare the net change.",
+    }
+    return json.dumps(payload)
 
 
 def _json_ld_for_home() -> str:
@@ -332,6 +549,7 @@ def _render_answer_markdown(text: str | None) -> str:
 
 
 def _render_home(request: Request, query: str = "", answer=None, results=None, error=None) -> HTMLResponse:
+    top_departments, top_funds = _top_budget_links()
     response = templates.TemplateResponse(
         request,
         "index.html",
@@ -346,6 +564,9 @@ def _render_home(request: Request, query: str = "", answer=None, results=None, e
             "featured_queries": _featured_query_links(limit=6),
             "more_popular_queries": _popular_query_links()[6:],
             "guides": _guide_links(),
+            "top_departments": top_departments,
+            "top_funds": top_funds,
+            "tool_links": _tool_links(),
             "base_url": BASE_URL,
             "page_title": SITE_NAME,
             "meta_description": DEFAULT_DESCRIPTION,
@@ -361,6 +582,7 @@ def _render_home(request: Request, query: str = "", answer=None, results=None, e
 
 def _render_search(request: Request, query: str, answer, results, error) -> HTMLResponse:
     indexable = _is_curated_query(query)
+    top_departments, top_funds = _top_budget_links(limit=6)
     title = f"{query} | {SITE_NAME}"
     description = (
         f"Search results for '{query}' across Chicago FY2026 budget documents, "
@@ -380,6 +602,9 @@ def _render_search(request: Request, query: str, answer, results, error) -> HTML
             "featured_queries": _featured_query_links(limit=5, exclude=query),
             "more_popular_queries": [],
             "guides": _guide_links(),
+            "top_departments": top_departments,
+            "top_funds": top_funds,
+            "tool_links": _tool_links(),
             "base_url": BASE_URL,
             "page_title": title,
             "meta_description": description,
@@ -542,6 +767,186 @@ async def guide_detail(request: Request, slug: str) -> HTMLResponse:
     )
 
 
+@app.get("/explorer", response_class=HTMLResponse)
+async def explorer(
+    request: Request,
+    q: str = Query("", alias="q"),
+    department: str = Query(""),
+    fund: str = Query(""),
+    document_type: str = Query(""),
+    sort: str = Query("appropriation"),
+) -> HTMLResponse:
+    data = _load_budget_data()
+    records = _filter_records(
+        query=q,
+        department=department,
+        fund=fund,
+        document_type=document_type,
+        sort=sort,
+    )
+    department_obj = next((item for item in data["departments"] if item["slug"] == department), None) if department else None
+    fund_obj = next((item for item in data["funds"] if item["slug"] == fund), None) if fund else None
+    total = sum(int(item["appropriation_total"]) for item in records)
+    indexable = not any([q.strip(), department, fund, document_type])
+    records_view = []
+    for record in records[:150]:
+        record_copy = dict(record)
+        record_copy["pdf_url"] = _record_pdf_url(record)
+        record_copy["department_href"] = _department_url(record["department_slug"])
+        record_copy["fund_href"] = _fund_url(record["fund_slug"])
+        records_view.append(record_copy)
+
+    top_departments = _aggregate_for_records(records, "department_slug", "department_code", "department_name", _department_url)[:8]
+    top_funds = _aggregate_for_records(records, "fund_slug", "fund_code", "fund_name", _fund_url)[:8]
+    return templates.TemplateResponse(
+        request,
+        "explorer.html",
+        {
+            "query": q.strip(),
+            "department": department,
+            "fund": fund,
+            "document_type": document_type,
+            "sort": sort,
+            "records": records_view,
+            "record_count": len(records),
+            "total_amount": total,
+            "department_options": data["departments"],
+            "fund_options": data["funds"],
+            "department_obj": department_obj,
+            "fund_obj": fund_obj,
+            "top_departments": top_departments,
+            "top_funds": top_funds,
+            "tool_links": _tool_links(),
+            "base_url": BASE_URL,
+            "page_title": "Chicago Budget Explorer | Chicago Budget Search",
+            "meta_description": "Explore structured Chicago FY2026 budget appropriations by department, fund, program, and document.",
+            "canonical_url": _absolute_url("/explorer"),
+            "robots_value": "index,follow" if indexable else "noindex,follow",
+            "json_ld": _json_ld_for_explorer(q.strip(), department_obj["name"] if department_obj else "", fund_obj["name"] if fund_obj else ""),
+            "analytics_payload": json.dumps({"page_type": "explorer", "query": q.strip(), "department": department, "fund": fund}),
+        },
+    )
+
+
+@app.get("/departments/{slug}", response_class=HTMLResponse)
+async def department_detail(request: Request, slug: str) -> HTMLResponse:
+    data = _load_budget_data()
+    entity = next((item for item in data["departments"] if item["slug"] == slug), None)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Department not found")
+
+    records = _filter_records(department=slug, sort="appropriation")
+    fund_breakdown = _aggregate_for_records(records, "fund_slug", "fund_code", "fund_name", _fund_url)[:12]
+    top_line_items = _aggregate_line_items(records, limit=15)
+    records_view = []
+    for record in records[:20]:
+        record_copy = dict(record)
+        record_copy["pdf_url"] = _record_pdf_url(record)
+        record_copy["fund_href"] = _fund_url(record["fund_slug"])
+        records_view.append(record_copy)
+
+    return templates.TemplateResponse(
+        request,
+        "entity_detail.html",
+        {
+            "entity_type": "department",
+            "entity": entity,
+            "records": records_view,
+            "records_total_count": len(records),
+            "breakdown_title": "Funding by fund",
+            "breakdown_items": fund_breakdown,
+            "top_line_items": top_line_items,
+            "search_href": _search_url(f"What is budgeted for {entity['name']}?"),
+            "explorer_href": f"/explorer?department={slug}",
+            "base_url": BASE_URL,
+            "page_title": f"{entity['name']} Budget | {SITE_NAME}",
+            "meta_description": f"Structured Chicago FY2026 appropriations for {entity['name']}, with line items and source page links.",
+            "canonical_url": _absolute_url(_department_url(slug)),
+            "robots_value": "index,follow",
+            "json_ld": _json_ld_for_budget_entity("department", entity, _department_url(slug)),
+            "analytics_payload": json.dumps({"page_type": "department", "slug": slug}),
+        },
+    )
+
+
+@app.get("/funds/{slug}", response_class=HTMLResponse)
+async def fund_detail(request: Request, slug: str) -> HTMLResponse:
+    data = _load_budget_data()
+    entity = next((item for item in data["funds"] if item["slug"] == slug), None)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Fund not found")
+
+    records = _filter_records(fund=slug, sort="appropriation")
+    department_breakdown = _aggregate_for_records(records, "department_slug", "department_code", "department_name", _department_url)[:12]
+    top_line_items = _aggregate_line_items(records, limit=15)
+    records_view = []
+    for record in records[:20]:
+        record_copy = dict(record)
+        record_copy["pdf_url"] = _record_pdf_url(record)
+        record_copy["department_href"] = _department_url(record["department_slug"])
+        records_view.append(record_copy)
+
+    return templates.TemplateResponse(
+        request,
+        "entity_detail.html",
+        {
+            "entity_type": "fund",
+            "entity": entity,
+            "records": records_view,
+            "records_total_count": len(records),
+            "breakdown_title": "Funding by department",
+            "breakdown_items": department_breakdown,
+            "top_line_items": top_line_items,
+            "search_href": _search_url(f"What does the budget say about the {entity['name']}?"),
+            "explorer_href": f"/explorer?fund={slug}",
+            "base_url": BASE_URL,
+            "page_title": f"{entity['name']} | {SITE_NAME}",
+            "meta_description": f"Structured Chicago FY2026 budget entries for the {entity['name']}.",
+            "canonical_url": _absolute_url(_fund_url(slug)),
+            "robots_value": "index,follow",
+            "json_ld": _json_ld_for_budget_entity("fund", entity, _fund_url(slug)),
+            "analytics_payload": json.dumps({"page_type": "fund", "slug": slug}),
+        },
+    )
+
+
+@app.get("/simulator", response_class=HTMLResponse)
+async def simulator(request: Request) -> HTMLResponse:
+    scenario_departments = _simulator_departments(limit=10)
+    baseline_total = sum(int(item["amount"]) for item in scenario_departments)
+    simulator_payload = {
+        "departments": scenario_departments,
+        "baseline_total": baseline_total,
+    }
+    faq_items = [
+        {
+            "question": "What does this simulator represent?",
+            "answer": "It shows a simplified department-level scenario model built from structured FY2026 appropriation totals parsed from the annual appropriation and grants ordinances.",
+        },
+        {
+            "question": "Does it update the official budget?",
+            "answer": "No. It is an educational scenario tool that helps users compare changes and share a budget tradeoff idea.",
+        },
+    ]
+    return templates.TemplateResponse(
+        request,
+        "simulator.html",
+        {
+            "simulator_payload": json.dumps(simulator_payload),
+            "departments": scenario_departments,
+            "baseline_total": baseline_total,
+            "faq_items": faq_items,
+            "base_url": BASE_URL,
+            "page_title": f"Chicago Budget Simulator | {SITE_NAME}",
+            "meta_description": "Simulate department-level changes to the Chicago FY2026 budget and share the resulting scenario.",
+            "canonical_url": _absolute_url("/simulator"),
+            "robots_value": "index,follow",
+            "json_ld": _json_ld_for_simulator(),
+            "analytics_payload": json.dumps({"page_type": "simulator"}),
+        },
+    )
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -578,9 +983,13 @@ async def robots_txt() -> Response:
 
 @app.get("/sitemap.xml")
 async def sitemap_xml() -> Response:
-    urls = [BASE_URL, _absolute_url("/guides")]
+    data = _load_budget_data()
+    urls = [BASE_URL, _absolute_url("/guides"), _absolute_url("/explorer"), _absolute_url("/simulator")]
     urls.extend(_absolute_url(f"/guides/{guide['slug']}") for guide in GUIDES)
     urls.extend(_absolute_url(_search_url(query)) for query in POPULAR_QUERY_PAGES)
+    urls.extend(_absolute_url(_department_url(item["slug"])) for item in data["departments"])
+    urls.extend(_absolute_url(_fund_url(item["slug"])) for item in data["funds"])
+    urls.extend(_absolute_url(f"/pdf/{filename}") for filename in PDF_FILES)
     xml_items = []
     for url in urls:
         xml_items.append(f"<url><loc>{url}</loc></url>")

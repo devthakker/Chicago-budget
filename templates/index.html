@@ -49,8 +49,58 @@
         </p>
         <div class="mini-links">
           <a href="/guides">Read budget guides</a>
+          <a href="/explorer">Open budget explorer</a>
+          <a href="/simulator">Open budget simulator</a>
           <a href="/pdf/chicago_Annual_Appropriation_Ordinance_2026.pdf#page=1" target="_blank" rel="noopener noreferrer">Open annual appropriation PDF</a>
           <a href="/pdf/chicago_Grant_Details_Ordinance_2026.pdf#page=1" target="_blank" rel="noopener noreferrer">Open grant details PDF</a>
+        </div>
+      </section>
+      {% endif %}
+      {% if tool_links and tool_links|length > 0 and page_kind != 'search' %}
+      <section class="card">
+        <h2>Budget Tools</h2>
+        <div class="tool-grid">
+          {% for tool in tool_links %}
+          <article class="tool-tile">
+            <h3><a href="{{ tool.href }}">{{ tool.title }}</a></h3>
+            <p>{{ tool.description }}</p>
+            <div class="mini-links">
+              <a href="{{ tool.href }}">Open tool</a>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+      {% if top_departments and top_departments|length > 0 and page_kind != 'search' %}
+      <section class="card">
+        <div class="section-head">
+          <h2>Top Departments</h2>
+          <a href="/explorer">View full explorer</a>
+        </div>
+        <div class="entity-chip-grid">
+          {% for item in top_departments %}
+          <a href="{{ item.href }}" class="entity-chip">
+            <span>{{ item.code }} · {{ item.name }}</span>
+            <strong>{{ item.amount|compact_currency }}</strong>
+          </a>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+      {% if top_funds and top_funds|length > 0 and page_kind != 'search' %}
+      <section class="card">
+        <div class="section-head">
+          <h2>Top Funds</h2>
+          <a href="/explorer">Explore all funds</a>
+        </div>
+        <div class="entity-chip-grid">
+          {% for item in top_funds %}
+          <a href="{{ item.href }}" class="entity-chip">
+            <span>{{ item.code }} · {{ item.name }}</span>
+            <strong>{{ item.amount|compact_currency }}</strong>
+          </a>
+          {% endfor %}
         </div>
       </section>
       {% endif %}
