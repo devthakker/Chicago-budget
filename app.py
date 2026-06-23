@@ -230,6 +230,60 @@ def _load_budget_data() -> dict[str, Any]:
     return budget_dataset.load()
 
 
+def _explorer_total_context(
+    data: dict[str, Any],
+    records: list[dict[str, Any]],
+    *,
+    query: str,
+    department: str,
+    fund: str,
+    document_type: str,
+) -> dict[str, Any]:
+    parsed_total = sum(int(item["appropriation_total"]) for item in records)
+    metadata = data.get("metadata", {})
+    is_unfiltered = not any([query.strip(), department, fund])
+
+    if is_unfiltered:
+        if document_type == "annual":
+            official_total = metadata.get("annual_official_total")
+            if official_total:
+                return {
+                    "label": "Official all-funds total",
+                    "primary": official_total,
+                    "secondary": parsed_total,
+                    "note": "Uses the ordinance summary total for the unfiltered annual view.",
+                    "using_official": True,
+                }
+        elif document_type == "grants":
+            official_total = metadata.get("grant_records_total")
+            if official_total:
+                return {
+                    "label": "Total grant appropriations",
+                    "primary": official_total,
+                    "secondary": None,
+                    "note": "Shows the total parsed from the grants ordinance.",
+                    "using_official": False,
+                }
+        else:
+            official_total = metadata.get("combined_official_total")
+            if official_total:
+                return {
+                    "label": "Official total budgeted",
+                    "primary": official_total,
+                    "secondary": parsed_total,
+                    "note": "Combines the annual ordinance all-funds summary with the grants ordinance total.",
+                    "using_official": True,
+                }
+
+    return {
+        "label": "Appropriation total shown",
+        "primary": parsed_total,
+        "secondary": None,
+        "note": "Sum of the records currently in view.",
+        "using_official": False,
+    }
+
+
 def _department_url(slug: str) -> str:
     return f"/departments/{slug}"
 
@@ -786,7 +840,14 @@ async def explorer(
     )
     department_obj = next((item for item in data["departments"] if item["slug"] == department), None) if department else None
     fund_obj = next((item for item in data["funds"] if item["slug"] == fund), None) if fund else None
-    total = sum(int(item["appropriation_total"]) for item in records)
+    total_card = _explorer_total_context(
+        data,
+        records,
+        query=q,
+        department=department,
+        fund=fund,
+        document_type=document_type,
+    )
     indexable = not any([q.strip(), department, fund, document_type])
     records_view = []
     for record in records[:150]:
@@ -809,7 +870,7 @@ async def explorer(
             "sort": sort,
             "records": records_view,
             "record_count": len(records),
-            "total_amount": total,
+            "total_card": total_card,
             "department_options": data["departments"],
             "fund_options": data["funds"],
             "department_obj": department_obj,

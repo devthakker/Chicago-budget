@@ -10,6 +10,7 @@ from typing import Any
 from .engine import extract_pdf_pages, normalize_text
 
 
+DATASET_VERSION = 2
 DEPARTMENT_RE = re.compile(r"^(?P<code>\d{3})\s*-\s+(?P<name>.+)$")
 HEADER_CODE_RE = re.compile(r"^(?P<code>[0-9A-Z]{4})\s*-\s+(?P<name>.+)$")
 TUPLE_RE = re.compile(r"^\((?P<tuple>[0-9A-Z/]+)\)$")
@@ -87,7 +88,10 @@ class StructuredBudgetDataset:
         if self._cache is None:
             if not self.data_file.exists():
                 self.build()
-            self._cache = json.loads(self.data_file.read_text())
+            cached = json.loads(self.data_file.read_text())
+            if cached.get("version") != DATASET_VERSION or "metadata" not in cached:
+                cached = self.build()
+            self._cache = cached
         return self._cache
 
     def build(self, pdf_paths: list[Path] | None = None) -> dict[str, Any]:
@@ -100,8 +104,10 @@ class StructuredBudgetDataset:
         funds = _aggregate_entities(records, key="fund_slug", code_key="fund_code", name_key="fund_name")
         offices = _aggregate_entities(records, key="office_slug", code_key="office_code", name_key="office_name")
         programs = _aggregate_programs(records)
+        metadata = _build_metadata(pdf_paths, records)
 
         dataset = {
+            "version": DATASET_VERSION,
             "stats": {
                 "record_count": len(records),
                 "department_count": len(departments),
@@ -110,6 +116,7 @@ class StructuredBudgetDataset:
                 "program_count": len(programs),
                 "documents": [p.name for p in pdf_paths],
             },
+            "metadata": metadata,
             "records": records,
             "departments": departments,
             "funds": funds,
@@ -316,6 +323,42 @@ def _parse_appropriation_body(lines: list[str]) -> tuple[list[dict[str, Any]], l
 
     finalize_pending()
     return line_items, section_totals, appropriation_total, fund_total, department_total
+
+
+def _build_metadata(pdf_paths: list[Path], records: list[dict[str, Any]]) -> dict[str, Any]:
+    by_document: dict[str, int] = defaultdict(int)
+    for record in records:
+        by_document[record["document_type"]] += int(record["appropriation_total"])
+
+    annual_pdf = next((path for path in pdf_paths if "grant" not in path.name.lower()), None)
+    annual_official_total = _extract_annual_official_total(annual_pdf) if annual_pdf else None
+    grant_total = by_document.get("grants", 0)
+    combined_official_total = (annual_official_total + grant_total) if annual_official_total is not None else None
+
+    return {
+        "annual_official_total": annual_official_total,
+        "grant_records_total": grant_total,
+        "combined_official_total": combined_official_total,
+        "parsed_records_total": sum(by_document.values()),
+        "parsed_totals_by_document": dict(by_document),
+    }
+
+
+def _extract_annual_official_total(pdf_path: Path) -> int | None:
+    if pdf_path is None:
+        return None
+
+    candidate_totals: list[int] = []
+    for page_text in extract_pdf_pages(pdf_path):
+        for raw_line in page_text.splitlines():
+            line = normalize_text(raw_line).strip()
+            if "Total - All Funds" not in line or "$" not in line:
+                continue
+            matches = re.findall(r"\$([\d,]+)", line)
+            if len(matches) >= 2:
+                candidate_totals.append(int(matches[-1].replace(",", "")))
+
+    return max(candidate_totals) if candidate_totals else None
 
 
 def _aggregate_entities(records: list[dict[str, Any]], key: str, code_key: str, name_key: str) -> list[dict[str, Any]]:

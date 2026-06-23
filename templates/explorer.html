@@ -87,8 +87,15 @@
           <strong class="stat-value">{{ record_count }}</strong>
         </article>
         <article class="card stat-card">
-          <span class="stat-label">Appropriation total shown</span>
-          <strong class="stat-value">{{ total_amount|currency }}</strong>
+          <span class="stat-label">{{ total_card.label }}</span>
+          <strong class="stat-value stat-value-money">{{ total_card.primary|compact_currency }}</strong>
+          <span class="stat-subvalue">{{ total_card.primary|currency }}</span>
+          {% if total_card.secondary %}
+          <span class="stat-note">Parsed records total: {{ total_card.secondary|currency }}</span>
+          {% endif %}
+          {% if total_card.note %}
+          <span class="stat-note">{{ total_card.note }}</span>
+          {% endif %}
         </article>
         <article class="card stat-card">
           <span class="stat-label">Primary department filter</span>
